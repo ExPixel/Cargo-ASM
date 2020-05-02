@@ -5,6 +5,10 @@ use std::path::PathBuf;
 pub struct AppArgs {
     pub binary_path: Option<PathBuf>,
     pub needle: String,
+
+    pub hide_jumps: bool,
+    pub hide_bytes: bool,
+    pub hide_address: bool,
 }
 
 /// Parses arguments from the command line and returns them as an `AppArgs` struct.
@@ -19,6 +23,21 @@ pub fn parse_cli_args() -> AppArgs {
                 .takes_value(true)
                 .value_name("BINARY")
                 .help("Path of a binary to disassemble and search for symbols in."),
+        )
+        .arg(
+            Arg::with_name("no-jumps")
+                .long("no-jumps")
+                .help("Don't show jumps."),
+        )
+        .arg(
+            Arg::with_name("no-bytes")
+                .long("no-bytes")
+                .help("Don't show raw instruction bytes."),
+        )
+        .arg(
+            Arg::with_name("no-addr")
+                .long("no-addr")
+                .help("Don't show the address of instructions."),
         )
         .arg(
             Arg::with_name("SEARCH")
@@ -37,5 +56,9 @@ pub fn parse_cli_args() -> AppArgs {
     AppArgs {
         binary_path,
         needle,
+
+        hide_address: matches.is_present("no-addr"),
+        hide_jumps: matches.is_present("no-jumps"),
+        hide_bytes: matches.is_present("no-bytes"),
     }
 }

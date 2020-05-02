@@ -36,9 +36,9 @@ fn run() -> anyhow::Result<()> {
     })?;
 
     let mut config = DisasmConfig::default();
-    config.sym_output.display_address = true;
-    config.sym_output.display_bytes = false;
-    config.sym_output.display_jumps = true;
+    config.sym_output.display_address = !args.hide_address;
+    config.sym_output.display_bytes = !args.hide_bytes;
+    config.sym_output.display_jumps = !args.hide_jumps;
     config.sym_output.display_instr = true;
     config.display_length = true;
     config.display_instr_count = true;
