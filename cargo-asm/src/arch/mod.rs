@@ -92,13 +92,13 @@ impl InnerJumpTable {
 fn do_ranges_overlap(a: RangeInclusive<usize>, b: RangeInclusive<usize>) -> bool {
     let a_top = std::cmp::min(*a.start(), *a.end());
     let b_bot = std::cmp::max(*b.start(), *b.end());
-    if a_top > b_bot {
+    if a_top >= b_bot {
         return false;
     }
 
     let a_bot = std::cmp::max(*a.start(), *a.end());
     let b_top = std::cmp::min(*b.start(), *b.end());
-    if b_top > a_bot {
+    if b_top >= a_bot {
         return false;
     }
 

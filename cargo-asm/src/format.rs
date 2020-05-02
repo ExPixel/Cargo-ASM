@@ -62,53 +62,42 @@ pub fn write_symbol_and_instructions<'i>(
     Ok(())
 }
 
+/*
+ * Our imaginary arrow pixels are arranged like so:
+ *
+ *     0
+ *   3   1
+ *     2
+ *
+ * Or
+ *
+ *           ARROW_TOP
+ *  ARROW_LEFT      ARROW_RIGHT
+ *          ARROW_BOT
+ */
+
+const ARROW_NONE: u8 = 0b0000;
+const ARROW_TOP: u8 = 0b0001;
+const ARROW_RIGHT: u8 = 0b0010;
+const ARROW_TOP_RIGHT: u8 = 0b0011;
+const ARROW_BOT: u8 = 0b0100;
+const ARROW_TOP_BOT: u8 = 0b0101;
+const ARROW_RIGHT_BOT: u8 = 0b0110;
+const ARROW_TOP_RIGHT_BOT: u8 = 0b0111;
+const ARROW_LEFT: u8 = 0b1000;
+const ARROW_TOP_LEFT: u8 = 0b1001;
+const ARROW_RIGHT_LEFT: u8 = 0b1010;
+const ARROW_TOP_RIGHT_LEFT: u8 = 0b1011;
+const ARROW_BOT_LEFT: u8 = 0b1100;
+const ARROW_TOP_BOT_LEFT: u8 = 0b1101;
+const ARROW_RIGHT_BOT_LEFT: u8 = 0b1110;
+const ARROW_TOP_RIGHT_BOT_LEFT: u8 = 0b1111;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ArrowPiece {
     None,
-    Left,
-    Right,
-    Up,
-    Down,
-    Cross,
-    BeginLeft,
-    EndRight,
-    BeginEnd,
-    LeftDownJoint,
-    LeftUpJoint,
-    DownRightJoint,
-    UpRightJoint,
-    VerticalRightJoint,
-    HorizontalDownJoint,
-    HorizontalUpJoint,
-}
-
-impl ArrowPiece {
-    pub fn is_horizontal(self) -> bool {
-        match self {
-            ArrowPiece::Left | ArrowPiece::Right => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_vertical(self) -> bool {
-        match self {
-            ArrowPiece::Up | ArrowPiece::Down => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_joint(self) -> bool {
-        match self {
-            ArrowPiece::Cross
-            | ArrowPiece::LeftDownJoint
-            | ArrowPiece::DownRightJoint
-            | ArrowPiece::VerticalRightJoint
-            | ArrowPiece::HorizontalDownJoint
-            | ArrowPiece::HorizontalUpJoint
-            | ArrowPiece::UpRightJoint => true,
-            _ => false,
-        }
-    }
+    End(u8),
+    Dir(u8),
 }
 
 fn write_arrow_pieces_for_line(
@@ -120,22 +109,31 @@ fn write_arrow_pieces_for_line(
     let off = line * width;
     for p in (&pieces[off..(off + width)]).iter() {
         let c = match p {
-            ArrowPiece::BeginLeft => '←',
-            ArrowPiece::Left => '─',
-            ArrowPiece::Right => '─',
-            ArrowPiece::LeftDownJoint => '┌',
-            ArrowPiece::LeftUpJoint => '└',
-            ArrowPiece::DownRightJoint => '└',
-            ArrowPiece::UpRightJoint => '┌',
-            ArrowPiece::Up => '│',
-            ArrowPiece::Down => '│',
-            ArrowPiece::EndRight => '→',
-            ArrowPiece::BeginEnd => '↔',
-            ArrowPiece::Cross => '┼',
-            ArrowPiece::VerticalRightJoint => '├',
-            ArrowPiece::HorizontalDownJoint => '┬',
-            ArrowPiece::HorizontalUpJoint => '┴',
+            ArrowPiece::End(bits) if *bits == ARROW_LEFT => '◀',
+            ArrowPiece::End(bits) if *bits == ARROW_RIGHT => '▶',
+            ArrowPiece::End(bits) if *bits == ARROW_LEFT | ARROW_RIGHT => '◆',
+
+            ArrowPiece::Dir(bits) => match *bits {
+                ARROW_NONE => '?',
+                ARROW_TOP => '│',
+                ARROW_RIGHT => '─',
+                ARROW_TOP_RIGHT => '└',
+                ARROW_BOT => '│',
+                ARROW_TOP_BOT => '│',
+                ARROW_RIGHT_BOT => '┌',
+                ARROW_TOP_RIGHT_BOT => '├',
+                ARROW_LEFT => '─',
+                ARROW_TOP_LEFT => '┘',
+                ARROW_RIGHT_LEFT => '─',
+                ARROW_TOP_RIGHT_LEFT => '┴',
+                ARROW_BOT_LEFT => '┐',
+                ARROW_TOP_BOT_LEFT => '┤',
+                ARROW_RIGHT_BOT_LEFT => '┬',
+                ARROW_TOP_RIGHT_BOT_LEFT => '┼',
+                _ => unreachable!("out of range arrow bits"),
+            },
             ArrowPiece::None => ' ',
+            _ => '?',
         };
         write!(output, "{}", c)?;
     }
@@ -181,115 +179,70 @@ fn draw_arrow_to(
     let mut push = |piece: ArrowPiece, x: usize, y: usize| {
         let off = y * width + x;
 
-        // FIXME This is kind of a mess. At the moment I just find corner cases that cause weird
-        // discontinuity in the arrows and add an if statement to fix them. I'm sure there are
-        // better ways but I haven't thought of a good one yet that doesn't just move the
-        // complexity somewhere else.
+        match pieces[off] {
+            ArrowPiece::End(bits) => {
+                match piece {
+                    ArrowPiece::End(new_bits) => pieces[off] = ArrowPiece::End(bits | new_bits),
+                    ArrowPiece::Dir(_) => { /* NOP */ }
+                    ArrowPiece::None => { /* NOP */ }
+                }
+            }
 
-        let cur = pieces[off];
+            ArrowPiece::Dir(bits) => {
+                match piece {
+                    ArrowPiece::End(new_bits) => pieces[off] = ArrowPiece::End(new_bits),
+                    ArrowPiece::Dir(new_bits) => pieces[off] = ArrowPiece::Dir(bits | new_bits),
+                    ArrowPiece::None => { /* NOP */ }
+                }
+            }
 
-        if cur == ArrowPiece::BeginEnd {
-            return;
-        }
-
-        if (cur == ArrowPiece::VerticalRightJoint && piece.is_horizontal())
-            || (cur.is_horizontal() && piece == ArrowPiece::VerticalRightJoint)
-        {
-            pieces[off] = ArrowPiece::Cross;
-        } else if (cur == ArrowPiece::HorizontalDownJoint && piece.is_vertical())
-            || (cur.is_vertical() && piece == ArrowPiece::HorizontalDownJoint)
-        {
-            pieces[off] = ArrowPiece::Cross;
-        } else if (cur == ArrowPiece::HorizontalUpJoint && piece.is_vertical())
-            || (cur.is_vertical() && piece == ArrowPiece::HorizontalUpJoint)
-        {
-            pieces[off] = ArrowPiece::Cross;
-        } else if (cur == ArrowPiece::LeftDownJoint && piece.is_vertical())
-            || (cur.is_vertical() && piece == ArrowPiece::LeftDownJoint)
-        {
-            pieces[off] = ArrowPiece::VerticalRightJoint;
-        } else if (cur == ArrowPiece::DownRightJoint && piece.is_vertical())
-            | (cur.is_vertical() && piece == ArrowPiece::DownRightJoint)
-        {
-            pieces[off] = ArrowPiece::VerticalRightJoint;
-        } else if (cur == ArrowPiece::LeftUpJoint && piece.is_vertical())
-            | (cur.is_vertical() && piece == ArrowPiece::LeftUpJoint)
-        {
-            pieces[off] = ArrowPiece::VerticalRightJoint;
-        } else if (cur == ArrowPiece::UpRightJoint && piece.is_vertical())
-            | (cur.is_vertical() && piece == ArrowPiece::UpRightJoint)
-        {
-            pieces[off] = ArrowPiece::VerticalRightJoint;
-        } else if (cur == ArrowPiece::UpRightJoint && piece.is_horizontal())
-            || (cur.is_horizontal() && piece == ArrowPiece::UpRightJoint)
-        {
-            pieces[off] = ArrowPiece::HorizontalDownJoint;
-        } else if (cur == ArrowPiece::LeftDownJoint && piece.is_horizontal())
-            || (cur.is_horizontal() && piece == ArrowPiece::LeftDownJoint)
-        {
-            pieces[off] = ArrowPiece::HorizontalDownJoint;
-        } else if (cur == ArrowPiece::DownRightJoint && piece.is_horizontal())
-            || (cur.is_horizontal() && piece == ArrowPiece::DownRightJoint)
-        {
-            pieces[off] = ArrowPiece::HorizontalUpJoint;
-        } else if (cur == ArrowPiece::LeftUpJoint && piece.is_horizontal())
-            || (cur.is_horizontal() && piece == ArrowPiece::LeftUpJoint)
-        {
-            pieces[off] = ArrowPiece::HorizontalUpJoint;
-        } else if (cur == ArrowPiece::BeginLeft && piece == ArrowPiece::EndRight)
-            || (cur == ArrowPiece::EndRight && piece == ArrowPiece::BeginLeft)
-        {
-            pieces[off] = ArrowPiece::BeginEnd
-        } else if (cur.is_horizontal() && piece.is_vertical())
-            || (cur.is_vertical() && piece.is_horizontal())
-        {
-            pieces[off] = ArrowPiece::Cross
-        } else if cur == ArrowPiece::None || (!cur.is_joint() && piece.is_joint()) {
-            pieces[off] = piece;
+            ArrowPiece::None => {
+                pieces[off] = piece;
+            }
         }
     };
 
-    push(ArrowPiece::BeginLeft, width - 1, from_y);
+    push(ArrowPiece::End(ARROW_LEFT), width - 1, from_y);
 
     let mut cur_x = width - 1;
     let mut cur_y = from_y;
 
     while cur_x > extend_x {
-        push(ArrowPiece::Left, cur_x, cur_y);
+        push(ArrowPiece::Dir(ARROW_LEFT | ARROW_RIGHT), cur_x, cur_y);
         cur_x -= 1;
     }
 
     if cur_y > to_y {
-        push(ArrowPiece::LeftUpJoint, cur_x, cur_y);
+        push(ArrowPiece::Dir(ARROW_RIGHT | ARROW_TOP), cur_x, cur_y);
         cur_y -= 1;
         while cur_y > to_y {
-            push(ArrowPiece::Up, cur_x, cur_y);
+            push(ArrowPiece::Dir(ARROW_TOP | ARROW_BOT), cur_x, cur_y);
             cur_y -= 1;
         }
-        push(ArrowPiece::UpRightJoint, cur_x, cur_y);
+        push(ArrowPiece::Dir(ARROW_BOT | ARROW_RIGHT), cur_x, cur_y);
     } else {
-        push(ArrowPiece::LeftDownJoint, cur_x, cur_y);
+        push(ArrowPiece::Dir(ARROW_RIGHT | ARROW_BOT), cur_x, cur_y);
         cur_y += 1;
         while cur_y < to_y {
-            push(ArrowPiece::Up, cur_x, cur_y);
+            push(ArrowPiece::Dir(ARROW_TOP | ARROW_BOT), cur_x, cur_y);
             cur_y += 1;
         }
-        push(ArrowPiece::DownRightJoint, cur_x, cur_y);
+        push(ArrowPiece::Dir(ARROW_TOP | ARROW_RIGHT), cur_x, cur_y);
     }
 
     if width > 1 {
         while cur_x < (width - 2) {
             cur_x += 1;
-            push(ArrowPiece::Right, cur_x, cur_y);
+            push(ArrowPiece::Dir(ARROW_LEFT | ARROW_RIGHT), cur_x, cur_y);
         }
     }
 
     cur_x += 1;
-    push(ArrowPiece::EndRight, cur_x, cur_y);
+    push(ArrowPiece::End(ARROW_RIGHT), cur_x, cur_y);
 }
 
 fn write_hex_string(bytes: &[u8], min_size: usize, output: &mut dyn Write) -> anyhow::Result<()> {
-    const NIBBLES_UP: [u8; 16] = [
+    const NIBBLES_TOP: [u8; 16] = [
         b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'A', b'B', b'C', b'D', b'E',
         b'F',
     ];
@@ -300,10 +253,10 @@ fn write_hex_string(bytes: &[u8], min_size: usize, output: &mut dyn Write) -> an
         let hi = (*b >> 4) as usize;
 
         if chars_written > 0 {
-            output.write_all(&[b' ', NIBBLES_UP[hi], NIBBLES_UP[lo]])?;
+            output.write_all(&[b' ', NIBBLES_TOP[hi], NIBBLES_TOP[lo]])?;
             chars_written += 3;
         } else {
-            output.write_all(&[NIBBLES_UP[hi], NIBBLES_UP[lo]])?;
+            output.write_all(&[NIBBLES_TOP[hi], NIBBLES_TOP[lo]])?;
             chars_written += 2;
         }
     }
