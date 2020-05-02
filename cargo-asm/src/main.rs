@@ -16,10 +16,15 @@ fn main() {
     let mut stdout = std::io::stdout();
 
     let binary = std::fs::read(&args.binary_path).expect("failed to read binary");
-    disasm::disassemble_binary(
+
+    let result = disasm::disassemble_binary(
         &binary,
-        disasm::SymbolMatcher::new(&[&args.needle]),
+        disasm::SymbolMatcher::new(&args.needle),
         &mut stdout,
-    )
-    .expect("failed to disassemble binary");
+    );
+
+    if let Err(err) = result {
+        eprintln!("error: {}", err);
+        std::process::exit(1);
+    }
 }

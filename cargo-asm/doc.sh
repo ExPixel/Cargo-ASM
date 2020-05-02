@@ -3,6 +3,7 @@
 # set -x
 
 documented_packages_list=(\
+    anyhow \
     cargo-asm \
     clap \
     gimli \

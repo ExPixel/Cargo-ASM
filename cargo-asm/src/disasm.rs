@@ -1,26 +1,88 @@
 use crate::arch::find_inner_jumps;
 use crate::binary::analyze_binary;
-use crate::errors::WCapstoneError;
+use crate::errors::{CargoAsmError, WCapstoneError};
 use crate::format::{measure, write_symbol_and_instructions, OutputConfig};
 use capstone::prelude::*;
 use std::io::Write;
 
 pub struct SymbolMatcher<'a> {
-    search_strings: &'a [&'a str],
+    original_needle: &'a str,
+    tokens: Vec<&'a str>,
 }
 
 impl<'a> SymbolMatcher<'a> {
-    pub fn new(search_strings: &'a [&'a str]) -> SymbolMatcher<'a> {
-        SymbolMatcher { search_strings }
+    pub fn new(needle: &'a str) -> SymbolMatcher<'a> {
+        let mut tokens = Vec::new();
+        Self::tokenize(needle, &mut tokens);
+        SymbolMatcher {
+            original_needle: needle,
+            tokens,
+        }
     }
 
-    pub fn matches(&self, name: &str) -> bool {
-        for needle in self.search_strings.iter() {
-            if name.contains(*needle) {
-                return true;
+    pub fn matches(&self, mut name: &str) -> bool {
+        for token in self.tokens.iter() {
+            if let Some((found_idx, found_end_idx)) = Self::find_ignore_case(name, token) {
+                name = &name[found_end_idx..];
+            } else {
+                return false;
             }
         }
-        false
+        true
+    }
+
+    fn find_ignore_case(haystack: &str, needle: &str) -> Option<(usize, usize)> {
+        if haystack.len() < needle.len() {
+            return None;
+        }
+
+        let mut needle_idx = 0;
+        for (idx, haystack_ch) in haystack.char_indices() {
+            let ch_len = haystack_ch.len_utf8();
+
+            if needle_idx + ch_len <= needle.len() && needle.is_char_boundary(needle_idx) {
+                if let Some(needle_ch) = (&needle[needle_idx..]).chars().next() {
+                    if needle_ch.eq_ignore_ascii_case(&haystack_ch) {
+                        needle_idx += ch_len;
+                        if needle_idx == needle.len() {
+                            return Some((idx - needle.len(), idx + ch_len));
+                        }
+                        continue;
+                    }
+                }
+            }
+
+            needle_idx = 0;
+        }
+
+        None
+    }
+
+    fn tokenize<'s>(needle: &'s str, tokens: &mut Vec<&'s str>) {
+        let mut ident_start = needle.len();
+
+        for (idx, ch) in needle.char_indices() {
+            if ident_start >= needle.len() {
+                if Self::is_ident_start(ch) {
+                    ident_start = idx;
+                }
+            } else if !Self::is_ident_part(ch) {
+                tokens.push(&needle[ident_start..idx]);
+                ident_start = needle.len();
+            }
+        }
+
+        if ident_start < needle.len() {
+            tokens.push(&needle[ident_start..needle.len()]);
+        }
+    }
+
+    fn is_ident_start(ch: char) -> bool {
+        ch == '_' || ch.is_ascii_alphabetic()
+    }
+
+    fn is_ident_part(ch: char) -> bool {
+        ch == '_' || ch.is_ascii_alphanumeric()
     }
 }
 
@@ -35,7 +97,7 @@ pub fn disassemble_binary(
         .symbols
         .iter()
         .find(|sym| matcher.matches(&sym.demangled_name))
-        .expect("failed to find test symbol");
+        .ok_or_else(|| CargoAsmError::NoSymbolMatch(matcher.original_needle.to_string()))?;
 
     let symbol_code = &binary[test_symbol.offset_range()];
 
