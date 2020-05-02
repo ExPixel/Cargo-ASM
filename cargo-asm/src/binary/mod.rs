@@ -135,9 +135,9 @@ pub struct Symbol<'a> {
 }
 
 impl<'a> Symbol<'a> {
-    pub fn addr_range(&self) -> Range<u64> {
-        self.addr..(self.addr + self.size as u64)
-    }
+    // pub fn addr_range(&self) -> Range<u64> {
+    //     self.addr..(self.addr + self.size as u64)
+    // }
 
     pub fn offset_range(&self) -> Range<usize> {
         self.offset..(self.offset + self.size)

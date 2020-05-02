@@ -2,7 +2,6 @@ use super::InnerJumpTable;
 use crate::errors::WCapstoneError;
 use capstone::prelude::*;
 use capstone::Insn;
-use std::ops::Range;
 
 pub fn find_inner_jumps_amd64<'a>(
     cs: &Capstone,
@@ -19,7 +18,7 @@ pub fn find_inner_jumps_amd64<'a>(
         });
 
         if is_jump {
-            let target = amd64_get_jump_target(&instr, &detail);
+            let target = amd64_get_jump_target(&detail);
             if let Some(target_index) =
                 target.and_then(|t| instrs.binary_search_by(|rhs| rhs.address().cmp(&t)).ok())
             {
@@ -70,8 +69,8 @@ fn amd64_is_jump_opcode(opcode: &[u8]) -> bool {
     }
 }
 
-fn amd64_get_jump_target(instr: &Insn<'_>, detail: &InsnDetail<'_>) -> Option<u64> {
-    use capstone::arch::x86::{X86Operand, X86OperandType};
+fn amd64_get_jump_target(detail: &InsnDetail<'_>) -> Option<u64> {
+    use capstone::arch::x86::X86OperandType;
 
     let x86_detail = match detail.arch_detail() {
         capstone::arch::ArchDetail::X86Detail(d) => d,

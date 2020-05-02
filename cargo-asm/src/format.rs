@@ -1,6 +1,5 @@
 use crate::arch::InnerJumpTable;
 use crate::binary::Symbol;
-use crate::errors::WCapstoneError;
 use capstone::Insn;
 use std::io::Write;
 
@@ -15,13 +14,7 @@ pub fn write_symbol_and_instructions<'i>(
 
     let m = measure(&config, instrs, &jumps);
     let jump_arrow_pieces = if config.display_jumps {
-        create_jump_arrows_buffer(
-            symbol.addr_range(),
-            m.jumps_width,
-            instrs.len(),
-            jumps,
-            output,
-        )
+        create_jump_arrows_buffer(m.jumps_width, instrs.len(), jumps)
     } else {
         Vec::new()
     };
@@ -147,11 +140,9 @@ fn write_arrow_pieces_for_line(
 }
 
 fn create_jump_arrows_buffer(
-    addr_range: std::ops::Range<u64>,
     width: usize,
     height: usize,
     jumps: &InnerJumpTable,
-    output: &mut dyn Write,
 ) -> Vec<ArrowPiece> {
     let mut pieces: Vec<ArrowPiece> = Vec::with_capacity(width * height);
     pieces.resize(width * height, ArrowPiece::None);

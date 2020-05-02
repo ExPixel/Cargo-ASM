@@ -1,7 +1,7 @@
 use crate::arch::find_inner_jumps;
 use crate::binary::analyze_binary;
 use crate::errors::{CargoAsmError, WCapstoneError};
-use crate::format::{measure, write_symbol_and_instructions, OutputConfig};
+use crate::format::{write_symbol_and_instructions, OutputConfig};
 use capstone::prelude::*;
 use std::io::Write;
 
@@ -22,7 +22,7 @@ impl<'a> SymbolMatcher<'a> {
 
     pub fn matches(&self, mut name: &str) -> bool {
         for token in self.tokens.iter() {
-            if let Some((found_idx, found_end_idx)) = Self::find_ignore_case(name, token) {
+            if let Some((_found_idx, found_end_idx)) = Self::find_ignore_case(name, token) {
                 name = &name[found_end_idx..];
             } else {
                 return false;
