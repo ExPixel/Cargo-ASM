@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct AppArgs {
-    pub binary_path: PathBuf,
+    pub binary_path: Option<PathBuf>,
     pub needle: String,
 }
 
@@ -13,20 +13,25 @@ pub fn parse_cli_args() -> AppArgs {
         .version("0.0.1")
         .author("Adolph C. <adolphc@outloook.com>")
         .arg(
-            Arg::with_name("BINARY")
-                .help("The binary to disassemble")
-                .required(true)
-                .index(1),
+            Arg::with_name("binary")
+                .short("b")
+                .long("binary")
+                .takes_value(true)
+                .value_name("BINARY")
+                .help("Path of a binary to disassemble and search for symbols in."),
         )
         .arg(
             Arg::with_name("SEARCH")
                 .help("The string to search for in a symbol name")
                 .required(true)
-                .index(2),
+                .index(1),
         )
         .get_matches();
 
-    let binary_path = PathBuf::from(matches.value_of("BINARY").unwrap());
+    let binary_path = matches
+        .value_of("binary")
+        .map(|s| shellexpand::tilde(s))
+        .map(|s| PathBuf::from(&s as &str));
     let needle = matches.value_of("SEARCH").unwrap().to_string();
 
     AppArgs {

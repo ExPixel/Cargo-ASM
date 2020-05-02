@@ -3,6 +3,8 @@
 # set -x
 
 documented_packages_list=(\
+    shellexpand \
+    cargo_metadata \
     anyhow \
     cargo-asm \
     clap \

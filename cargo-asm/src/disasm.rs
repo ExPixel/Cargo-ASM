@@ -1,4 +1,4 @@
-use crate::arch::find_inner_jumps;
+use crate::arch::{find_inner_jumps, InnerJumpTable};
 use crate::binary::analyze_binary;
 use crate::errors::{CargoAsmError, WCapstoneError};
 use crate::format::{write_symbol_and_instructions, OutputConfig};
@@ -86,10 +86,22 @@ impl<'a> SymbolMatcher<'a> {
     }
 }
 
+#[derive(Default)]
+pub struct DisasmConfig {
+    pub sym_output: OutputConfig,
+
+    /// If this is true, the length of the symbol in bytes will be displayed.
+    pub display_length: bool,
+
+    /// If this is true, the number of instructions will be displayed.
+    pub display_instr_count: bool,
+}
+
 pub fn disassemble_binary(
     binary: &[u8],
     matcher: SymbolMatcher,
     output: &mut dyn Write,
+    config: &DisasmConfig,
 ) -> anyhow::Result<()> {
     let binary_info = analyze_binary(binary)?;
 
@@ -112,16 +124,13 @@ pub fn disassemble_binary(
         .disasm_all(symbol_code, test_symbol.addr)
         .map_err(WCapstoneError)?;
 
-    let jumps = find_inner_jumps(binary_info.arch, &cs, &instrs)?;
-
-    let config = OutputConfig {
-        display_address: true,
-        display_bytes: true,
-        display_jumps: true,
-        display_instr: true,
+    let jumps = if config.sym_output.display_jumps {
+        find_inner_jumps(binary_info.arch, &cs, &instrs)?
+    } else {
+        InnerJumpTable::new()
     };
 
-    write_symbol_and_instructions(&test_symbol, &instrs, &jumps, &config, output)?;
+    write_symbol_and_instructions(&test_symbol, &instrs, &jumps, &config.sym_output, output)?;
 
     Ok(())
 }

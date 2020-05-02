@@ -20,10 +20,13 @@ pub fn write_symbol_and_instructions<'i>(
     };
 
     for (line_idx, instr) in instrs.iter().enumerate() {
+        // Some left padding
+        write!(output, "    ")?;
+
         if config.display_address {
             write!(
                 output,
-                "  {:0width$x}:    ",
+                "{:0width$x}:    ",
                 instr.address(),
                 width = m.address_width
             )?;
