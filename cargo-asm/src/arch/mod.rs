@@ -3,87 +3,123 @@ mod amd64;
 use crate::binary::BinaryArch;
 use amd64::*;
 use capstone::prelude::*;
+use capstone::Insn;
 use std::ops::RangeInclusive;
 
-pub struct Jump {
-    src: u64,
-    dest: u64,
-    overlaps: u32,
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct InnerJump {
+    /// The index that we are jumping from.
+    pub source: usize,
+
+    /// The index that we are jumping to.
+    pub target: usize,
+
+    pub display_offset: usize,
 }
 
-pub struct JumpTable {
-    addrs: Vec<(u64, Option<u64>)>,
+impl PartialOrd for InnerJump {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
-impl JumpTable {
-    pub fn new() -> JumpTable {
-        JumpTable { addrs: Vec::new() }
+impl Ord for InnerJump {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.source.cmp(&other.source)
     }
-
-    pub fn sort(&mut self) {
-        use std::cmp::Ordering;
-
-        self.addrs.sort_by(|lhs, rhs| match lhs.0.cmp(&rhs.0) {
-            Ordering::Equal => match (lhs.1, rhs.1) {
-                (Some(lt), Some(rt)) => lt.cmp(&rt),
-                (None, Some(_rt)) => Ordering::Less,
-                (Some(_lt), None) => Ordering::Greater,
-                (None, None) => Ordering::Equal,
-            },
-            other => other,
-        });
-    }
-
-    pub fn push(&mut self, from: u64, dest: Option<u64>) {
-        self.addrs.push((from, dest));
-    }
-
-    /// Returns true if the table contains the given jump source location.
-    pub fn contains_src(&self, addr: u64) -> bool {
-        self.addrs.iter().any(|(src, _)| *src == addr)
-    }
-
-    pub fn find_jump(&self, addr: u64) -> Option<u64> {
-        self.iter_with_dest()
-            .find(|(src, _)| *src == addr)
-            .map(|(_, dst)| dst)
-    }
-
-    pub fn iter(&self) -> impl '_ + Iterator<Item = (u64, Option<u64>)> {
-        self.addrs.iter().copied()
-    }
-
-    pub fn iter_with_dest(&self) -> impl '_ + Iterator<Item = (u64, u64)> {
-        self.addrs
-            .iter()
-            .filter_map(|(src, dst)| dst.map(|d| (*src, d)))
-    }
-
-    pub fn addrs(&self) -> &[(u64, Option<u64>)] {
-        &self.addrs
-    }
-
-    // pub fn ranges(&self) -> impl '_ + Iterator<Item = RangeInclusive<u64>> {
-    //     self.iter_with_dest()
-    //         .map(|(src, dst)| RangeInclusive::new(src, dst))
-    // }
 }
 
-pub fn analyze_jumps<'a>(
+pub struct InnerJumpTable {
+    jumps: Vec<InnerJump>,
+    max_display_offset: usize,
+}
+
+impl InnerJumpTable {
+    pub fn new() -> InnerJumpTable {
+        InnerJumpTable {
+            jumps: Vec::new(),
+            max_display_offset: 0,
+        }
+    }
+
+    pub fn push(&mut self, source: usize, target: usize) {
+        self.jumps.push(InnerJump {
+            source,
+            target,
+            display_offset: 0,
+        })
+    }
+
+    pub fn max_display_offset(&self) -> usize {
+        self.max_display_offset
+    }
+
+    fn sort_and_calc_overlaps(&mut self) {
+        self.jumps.sort();
+        self.max_display_offset = 0;
+        for idx in (0..self.jumps.len()).rev() {
+            let range = self.jumps[idx].source..=self.jumps[idx].target;
+
+            let mut display_offset = 0;
+
+            // FIXME I can probably make this faster but It's not THAT with the considering the
+            // number of jumps you're likely to find in any given function.
+            let mut continue_search = true;
+            while continue_search {
+                continue_search = false;
+                for lower_jump in self
+                    .jumps
+                    .iter()
+                    .filter(|j| do_ranges_overlap(range.clone(), j.source..=j.target))
+                {
+                    if lower_jump.display_offset == display_offset {
+                        display_offset += 2;
+                        continue_search = true;
+                    }
+                }
+            }
+
+            self.jumps[idx].display_offset = display_offset;
+            self.max_display_offset = std::cmp::max(self.max_display_offset, display_offset);
+        }
+    }
+
+    pub fn iter(&self) -> impl '_ + Iterator<Item = &InnerJump> {
+        self.jumps.iter()
+    }
+}
+
+fn do_ranges_overlap(a: RangeInclusive<usize>, b: RangeInclusive<usize>) -> bool {
+    let a_top = std::cmp::min(*a.start(), *a.end());
+    let b_bot = std::cmp::max(*b.start(), *b.end());
+    if a_top > b_bot {
+        return false;
+    }
+
+    let a_bot = std::cmp::max(*a.start(), *a.end());
+    let b_top = std::cmp::min(*b.start(), *b.end());
+    if b_top > a_bot {
+        return false;
+    }
+
+    true
+}
+
+pub fn find_inner_jumps<'a>(
     arch: BinaryArch,
     cs: &Capstone,
-    instrs: impl 'a + Iterator<Item = capstone::Insn<'a>>,
-) -> anyhow::Result<JumpTable> {
+    instrs: &[Insn<'a>],
+) -> anyhow::Result<InnerJumpTable> {
     let mut jumps = match arch {
-        BinaryArch::AMD64 => analyze_jumps_amd64(cs, instrs),
+        BinaryArch::AMD64 => find_inner_jumps_amd64(cs, instrs),
         _ => {
             eprintln!("jump analysis for arch {:?} not yet supported", arch);
-            Ok(JumpTable::new())
+            Ok(InnerJumpTable::new())
         }
     };
 
     if let Ok(ref mut j) = jumps {
-        j.sort();
+        j.sort_and_calc_overlaps();
     }
 
     jumps

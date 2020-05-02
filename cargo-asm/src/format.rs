@@ -1,26 +1,32 @@
-use crate::arch::JumpTable;
+use crate::arch::InnerJumpTable;
 use crate::binary::Symbol;
 use crate::errors::WCapstoneError;
-use capstone::Instructions;
+use capstone::Insn;
 use std::io::Write;
 
 pub fn write_symbol_and_instructions<'i>(
     symbol: &Symbol,
-    instrs: Instructions<'i>,
-    jumps: &JumpTable,
+    instrs: &[Insn<'i>],
+    jumps: &InnerJumpTable,
     config: &OutputConfig,
     output: &mut dyn Write,
 ) -> anyhow::Result<()> {
     writeln!(output, "{}:", symbol.demangled_name)?;
 
-    let m = measure(&config, instrs.iter(), &jumps);
-    let jum_arrows_buffer = if config.display_jumps {
-        create_jump_arrows_buffer(symbol.addr_range(), jumps, output)
+    let m = measure(&config, instrs, &jumps);
+    let jump_arrow_pieces = if config.display_jumps {
+        create_jump_arrows_buffer(
+            symbol.addr_range(),
+            m.jumps_width,
+            instrs.len(),
+            jumps,
+            output,
+        )
     } else {
-        String::new()
+        Vec::new()
     };
 
-    for instr in instrs.iter() {
+    for (line_idx, instr) in instrs.iter().enumerate() {
         if config.display_address {
             write!(
                 output,
@@ -35,7 +41,7 @@ pub fn write_symbol_and_instructions<'i>(
         }
 
         if config.display_jumps {
-            // FIXME todo
+            write_arrow_pieces_for_line(output, &jump_arrow_pieces, m.jumps_width, line_idx)?;
         }
 
         if config.display_instr {
@@ -60,18 +66,232 @@ pub fn write_symbol_and_instructions<'i>(
     Ok(())
 }
 
-fn create_jump_arrows_buffer(
-    addr_range: std::ops::Range<u64>,
-    jumps: &JumpTable,
-    output: &mut dyn Write,
-) -> String {
-    let mut arrows = String::new();
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ArrowPiece {
+    None,
+    Left,
+    Right,
+    Up,
+    Down,
+    Cross,
+    BeginLeft,
+    EndRight,
+    BeginEnd,
+    LeftDownJoint,
+    LeftUpJoint,
+    DownRightJoint,
+    UpRightJoint,
+    VerticalRightJoint,
+    HorizontalDownJoint,
+    HorizontalUpJoint,
+}
 
-    for addr in addr_range {
-        // FIXME
+impl ArrowPiece {
+    pub fn is_horizontal(self) -> bool {
+        match self {
+            ArrowPiece::Left | ArrowPiece::Right => true,
+            _ => false,
+        }
     }
 
-    arrows
+    pub fn is_vertical(self) -> bool {
+        match self {
+            ArrowPiece::Up | ArrowPiece::Down => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_joint(self) -> bool {
+        match self {
+            ArrowPiece::Cross
+            | ArrowPiece::LeftDownJoint
+            | ArrowPiece::DownRightJoint
+            | ArrowPiece::VerticalRightJoint
+            | ArrowPiece::HorizontalDownJoint
+            | ArrowPiece::HorizontalUpJoint
+            | ArrowPiece::UpRightJoint => true,
+            _ => false,
+        }
+    }
+}
+
+fn write_arrow_pieces_for_line(
+    output: &mut dyn Write,
+    pieces: &[ArrowPiece],
+    width: usize,
+    line: usize,
+) -> anyhow::Result<()> {
+    let off = line * width;
+    for p in (&pieces[off..(off + width)]).iter() {
+        let c = match p {
+            ArrowPiece::BeginLeft => '←',
+            ArrowPiece::Left => '─',
+            ArrowPiece::Right => '─',
+            ArrowPiece::LeftDownJoint => '┌',
+            ArrowPiece::LeftUpJoint => '└',
+            ArrowPiece::DownRightJoint => '└',
+            ArrowPiece::UpRightJoint => '┌',
+            ArrowPiece::Up => '│',
+            ArrowPiece::Down => '│',
+            ArrowPiece::EndRight => '→',
+            ArrowPiece::BeginEnd => '↔',
+            ArrowPiece::Cross => '┼',
+            ArrowPiece::VerticalRightJoint => '├',
+            ArrowPiece::HorizontalDownJoint => '┬',
+            ArrowPiece::HorizontalUpJoint => '┴',
+            ArrowPiece::None => ' ',
+        };
+        write!(output, "{}", c)?;
+    }
+    Ok(())
+}
+
+fn create_jump_arrows_buffer(
+    addr_range: std::ops::Range<u64>,
+    width: usize,
+    height: usize,
+    jumps: &InnerJumpTable,
+    output: &mut dyn Write,
+) -> Vec<ArrowPiece> {
+    let mut pieces: Vec<ArrowPiece> = Vec::with_capacity(width * height);
+    pieces.resize(width * height, ArrowPiece::None);
+
+    for jump in jumps.iter() {
+        let from_y = jump.source;
+        let to_y = jump.target;
+
+        if from_y == to_y {
+            continue;
+        }
+
+        draw_arrow_to(
+            &mut pieces,
+            width,
+            (width - (jump.display_offset)).saturating_sub(1),
+            from_y,
+            to_y,
+        );
+    }
+
+    pieces
+}
+
+#[allow(clippy::if_same_then_else)]
+fn draw_arrow_to(
+    pieces: &mut [ArrowPiece],
+    width: usize,
+    extend_x: usize,
+    from_y: usize,
+    to_y: usize,
+) {
+    let mut push = |piece: ArrowPiece, x: usize, y: usize| {
+        let off = y * width + x;
+
+        // FIXME This is kind of a mess. At the moment I just find corner cases that cause weird
+        // discontinuity in the arrows and add an if statement to fix them. I'm sure there are
+        // better ways but I haven't thought of a good one yet that doesn't just move the
+        // complexity somewhere else.
+
+        let cur = pieces[off];
+
+        if cur == ArrowPiece::BeginEnd {
+            return;
+        }
+
+        if (cur == ArrowPiece::VerticalRightJoint && piece.is_horizontal())
+            || (cur.is_horizontal() && piece == ArrowPiece::VerticalRightJoint)
+        {
+            pieces[off] = ArrowPiece::Cross;
+        } else if (cur == ArrowPiece::HorizontalDownJoint && piece.is_vertical())
+            || (cur.is_vertical() && piece == ArrowPiece::HorizontalDownJoint)
+        {
+            pieces[off] = ArrowPiece::Cross;
+        } else if (cur == ArrowPiece::HorizontalUpJoint && piece.is_vertical())
+            || (cur.is_vertical() && piece == ArrowPiece::HorizontalUpJoint)
+        {
+            pieces[off] = ArrowPiece::Cross;
+        } else if (cur == ArrowPiece::LeftDownJoint && piece.is_vertical())
+            || (cur.is_vertical() && piece == ArrowPiece::LeftDownJoint)
+        {
+            pieces[off] = ArrowPiece::VerticalRightJoint;
+        } else if (cur == ArrowPiece::DownRightJoint && piece.is_vertical())
+            | (cur.is_vertical() && piece == ArrowPiece::DownRightJoint)
+        {
+            pieces[off] = ArrowPiece::VerticalRightJoint;
+        } else if (cur == ArrowPiece::LeftUpJoint && piece.is_vertical())
+            | (cur.is_vertical() && piece == ArrowPiece::LeftUpJoint)
+        {
+            pieces[off] = ArrowPiece::VerticalRightJoint;
+        } else if (cur == ArrowPiece::UpRightJoint && piece.is_vertical())
+            | (cur.is_vertical() && piece == ArrowPiece::UpRightJoint)
+        {
+            pieces[off] = ArrowPiece::VerticalRightJoint;
+        } else if (cur == ArrowPiece::UpRightJoint && piece.is_horizontal())
+            || (cur.is_horizontal() && piece == ArrowPiece::UpRightJoint)
+        {
+            pieces[off] = ArrowPiece::HorizontalDownJoint;
+        } else if (cur == ArrowPiece::LeftDownJoint && piece.is_horizontal())
+            || (cur.is_horizontal() && piece == ArrowPiece::LeftDownJoint)
+        {
+            pieces[off] = ArrowPiece::HorizontalDownJoint;
+        } else if (cur == ArrowPiece::DownRightJoint && piece.is_horizontal())
+            || (cur.is_horizontal() && piece == ArrowPiece::DownRightJoint)
+        {
+            pieces[off] = ArrowPiece::HorizontalUpJoint;
+        } else if (cur == ArrowPiece::LeftUpJoint && piece.is_horizontal())
+            || (cur.is_horizontal() && piece == ArrowPiece::LeftUpJoint)
+        {
+            pieces[off] = ArrowPiece::HorizontalUpJoint;
+        } else if (cur == ArrowPiece::BeginLeft && piece == ArrowPiece::EndRight)
+            || (cur == ArrowPiece::EndRight && piece == ArrowPiece::BeginLeft)
+        {
+            pieces[off] = ArrowPiece::BeginEnd
+        } else if (cur.is_horizontal() && piece.is_vertical())
+            || (cur.is_vertical() && piece.is_horizontal())
+        {
+            pieces[off] = ArrowPiece::Cross
+        } else if cur == ArrowPiece::None || (!cur.is_joint() && piece.is_joint()) {
+            pieces[off] = piece;
+        }
+    };
+
+    push(ArrowPiece::BeginLeft, width - 1, from_y);
+
+    let mut cur_x = width - 1;
+    let mut cur_y = from_y;
+
+    while cur_x > extend_x {
+        push(ArrowPiece::Left, cur_x, cur_y);
+        cur_x -= 1;
+    }
+
+    if cur_y > to_y {
+        push(ArrowPiece::LeftUpJoint, cur_x, cur_y);
+        cur_y -= 1;
+        while cur_y > to_y {
+            push(ArrowPiece::Up, cur_x, cur_y);
+            cur_y -= 1;
+        }
+        push(ArrowPiece::UpRightJoint, cur_x, cur_y);
+    } else {
+        push(ArrowPiece::LeftDownJoint, cur_x, cur_y);
+        cur_y += 1;
+        while cur_y < to_y {
+            push(ArrowPiece::Up, cur_x, cur_y);
+            cur_y += 1;
+        }
+        push(ArrowPiece::DownRightJoint, cur_x, cur_y);
+    }
+
+    if width > 1 {
+        while cur_x < (width - 2) {
+            cur_x += 1;
+            push(ArrowPiece::Right, cur_x, cur_y);
+        }
+    }
+
+    cur_x += 1;
+    push(ArrowPiece::EndRight, cur_x, cur_y);
 }
 
 fn write_hex_string(bytes: &[u8], min_size: usize, output: &mut dyn Write) -> anyhow::Result<()> {
@@ -113,43 +333,18 @@ pub struct OutputMeasure {
 
 pub fn measure<'i>(
     config: &OutputConfig,
-    instrs: impl 'i + Iterator<Item = capstone::Insn<'i>>,
-    jumps: &JumpTable,
+    instrs: &[Insn<'i>],
+    jumps: &InnerJumpTable,
 ) -> OutputMeasure {
     use std::cmp::max;
 
     let mut measure = OutputMeasure::default();
 
     if config.display_jumps {
-        let mut overlaps = 0;
-
-        for (idx, (src, maybe_dest)) in jumps.iter().enumerate() {
-            let dest = if let Some(d) = maybe_dest {
-                d
-            } else {
-                continue;
-            };
-
-            let range = src..=dest;
-
-            // This counts the number of jumps with destinations that have a source that is
-            // contained within the range src..=dest. This works for counting overlaps because we
-            // always sort the array of jump pairs.
-            let cur_overlaps = jumps.addrs()[idx..]
-                .iter()
-                .filter_map(|(osrc, odst)| odst.map(|_| *osrc))
-                .filter(|osrc| range.contains(osrc))
-                .count();
-
-            overlaps = std::cmp::max(overlaps, cur_overlaps);
-        }
-
-        if !jumps.addrs().is_empty() {
-            measure.jumps_width = overlaps + 1;
-        }
+        measure.jumps_width = jumps.max_display_offset() + 1;
     }
 
-    for instr in instrs {
+    for instr in instrs.iter() {
         if config.display_address {
             measure.address_width = max(measure.address_width, addr_len(instr.address()));
         }

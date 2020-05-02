@@ -1,17 +1,17 @@
-use super::JumpTable;
+use super::InnerJumpTable;
 use crate::errors::WCapstoneError;
 use capstone::prelude::*;
 use capstone::Insn;
 use std::ops::Range;
 
-pub fn analyze_jumps_amd64<'a>(
+pub fn find_inner_jumps_amd64<'a>(
     cs: &Capstone,
-    instrs: impl 'a + Iterator<Item = capstone::Insn<'a>>,
-) -> anyhow::Result<JumpTable> {
+    instrs: &[Insn<'a>],
+) -> anyhow::Result<InnerJumpTable> {
     use capstone::arch::x86::X86InsnGroup;
 
-    let mut jumps = JumpTable::new();
-    for instr in instrs {
+    let mut jumps = InnerJumpTable::new();
+    for (idx, instr) in instrs.iter().enumerate() {
         let detail = cs.insn_detail(&instr).map_err(WCapstoneError)?;
         let is_jump = detail.groups().any(|g| {
             g == InsnGroupId(X86InsnGroup::X86_GRP_CALL as u8)
@@ -19,7 +19,12 @@ pub fn analyze_jumps_amd64<'a>(
         });
 
         if is_jump {
-            jumps.push(instr.address(), amd64_get_jump_target(&instr, &detail));
+            let target = amd64_get_jump_target(&instr, &detail);
+            if let Some(target_index) =
+                target.and_then(|t| instrs.binary_search_by(|rhs| rhs.address().cmp(&t)).ok())
+            {
+                jumps.push(idx, target_index);
+            }
         }
     }
     Ok(jumps)

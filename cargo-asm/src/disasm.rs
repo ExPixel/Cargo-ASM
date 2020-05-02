@@ -1,4 +1,4 @@
-use crate::arch::analyze_jumps;
+use crate::arch::find_inner_jumps;
 use crate::binary::analyze_binary;
 use crate::errors::WCapstoneError;
 use crate::format::{measure, write_symbol_and_instructions, OutputConfig};
@@ -50,7 +50,7 @@ pub fn disassemble_binary(
         .disasm_all(symbol_code, test_symbol.addr)
         .map_err(WCapstoneError)?;
 
-    let jumps = analyze_jumps(binary_info.arch, &cs, instrs.iter())?;
+    let jumps = find_inner_jumps(binary_info.arch, &cs, &instrs)?;
 
     let config = OutputConfig {
         display_address: true,
@@ -59,7 +59,7 @@ pub fn disassemble_binary(
         display_instr: true,
     };
 
-    write_symbol_and_instructions(&test_symbol, instrs, &jumps, &config, output)?;
+    write_symbol_and_instructions(&test_symbol, &instrs, &jumps, &config, output)?;
 
     Ok(())
 }
