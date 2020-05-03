@@ -27,7 +27,7 @@ Disassemble single symbols in a binary.
 
 Example Output:
 ```
-[address: 0x264F60] [size: 395 bytes] pyrite_gba::scheduler::SharedGbaScheduler::purge::h24b3d5d65acad74a
+[address: 0x264020] [size: 395 bytes] pyrite_gba::scheduler::SharedGbaScheduler::purge::h24b3d5d65acad74a
 [address: 0x2662B0] [size: 251 bytes] pyrite_gba::scheduler::SharedGbaScheduler::new::hd31299236c8d984b
 [address: 0x2663B0] [size:  29 bytes] <pyrite_gba::scheduler::SharedGbaScheduler as core::clone::Clone>::clone::h150cc913f28b405a
 ```
