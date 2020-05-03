@@ -5,16 +5,16 @@ Disassemble single symbols in a binary.
 
 ### TODO
 
-[ ] Read Cargo Metadata in order to find binaries automatically.
+- [ ] Read Cargo Metadata in order to find binaries automatically.
 
-[x] Disassemble ELF binaries. **Linux**
-[ ] Disassemble PE/COFF binaries. **Windows**
-[ ] Disassemble Mach binaries. **MacOS**
+- [x] Disassemble ELF binaries. **Linux**
+- [ ] Disassemble PE/COFF binaries. **Windows**
+- [ ] Disassemble Mach binaries. **MacOS**
 
-[ ] Patch call instructions with symbol names.
+- [ ] Patch call instructions with symbol names.
 
-[ ] Use DWARF debug information to show Rust code alongside disassembly.
-[ ] ^ Do the equivalent of that for Windows and MacOS (I'll figure it out)
+- [ ] Use DWARF debug information to show Rust code alongside disassembly.
+- [ ] ^ Do the equivalent of that for Windows and MacOS (I'll figure it out)
 
 
 ### Examples
