@@ -5,6 +5,8 @@ Disassemble single symbols in a binary.
 
 ### TODO
 
+[ ] Read Cargo Metadata in order to find binaries automatically.
+
 [x] Disassemble ELF binaries. **Linux**
 [ ] Disassemble PE/COFF binaries. **Windows**
 [ ] Disassemble Mach binaries. **MacOS**
