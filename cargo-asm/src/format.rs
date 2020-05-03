@@ -314,9 +314,21 @@ pub fn measure<'i>(
 
     measure
 }
+
+/// Returns the number of digits required to display an offset in decimal.
+/// This assumes that all of the digits are packed together with no spaces or punctuation.
+pub fn off_len(mut off: usize) -> usize {
+    let mut len = 0;
+    while off > 0 {
+        len += 1;
+        off /= 10;
+    }
+    len
+}
+
 /// Returns the number of characters required to display an address in hexidecimal.
 /// This assumes that all of the bytes will be packed together.
-fn addr_len(mut addr: u64) -> usize {
+pub fn addr_len(mut addr: u64) -> usize {
     let mut len = 0;
     while addr > 0 {
         len += 1;

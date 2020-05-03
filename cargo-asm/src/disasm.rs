@@ -45,7 +45,7 @@ impl<'a> SymbolMatcher<'a> {
                     if needle_ch.eq_ignore_ascii_case(&haystack_ch) {
                         needle_idx += ch_len;
                         if needle_idx == needle.len() {
-                            return Some((idx - needle.len(), idx + ch_len));
+                            return Some((idx + ch_len - needle.len(), idx + ch_len));
                         }
                         continue;
                     }
