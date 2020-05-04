@@ -100,6 +100,7 @@ dependencies = [
  "clap",
  "gimli",
  "goblin",
+ "once_cell",
  "rustc-demangle",
  "shellexpand",
 ]
@@ -268,6 +269,12 @@ checksum = "14b6052be84e6b71ab17edffc2eeabf5c2c3ae1fdb464aae35ac50c67a44e1f7"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "once_cell"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1c601810575c99596d4afc46f78a678c80105117c379eb3650cf99b8a21ce5b"
 
 [[package]]
 name = "plain"

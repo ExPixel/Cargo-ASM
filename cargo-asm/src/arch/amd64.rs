@@ -1,32 +1,61 @@
-use super::InnerJumpTable;
+use super::{InnerJumpTable, OperandPatches};
+use crate::binary::Symbol;
 use crate::errors::WCapstoneError;
 use capstone::prelude::*;
 use capstone::Insn;
 
-pub fn find_inner_jumps_amd64<'a>(
+pub fn analyze_jumps_amd64<'i, 's>(
+    symbols: &'s [Symbol<'s>],
     cs: &Capstone,
-    instrs: &[Insn<'a>],
-) -> anyhow::Result<InnerJumpTable> {
+    instrs: &[Insn<'i>],
+) -> anyhow::Result<(InnerJumpTable, OperandPatches<'s>)> {
     use capstone::arch::x86::X86InsnGroup;
 
+    let mut op_patches = OperandPatches::new();
     let mut jumps = InnerJumpTable::new();
+
     for (idx, instr) in instrs.iter().enumerate() {
         let detail = cs.insn_detail(&instr).map_err(WCapstoneError)?;
-        let is_jump = detail.groups().any(|g| {
-            g == InsnGroupId(X86InsnGroup::X86_GRP_CALL as u8)
-                || g == InsnGroupId(X86InsnGroup::X86_GRP_JUMP as u8)
-        });
 
-        if is_jump {
-            let target = amd64_get_jump_target(&detail);
-            if let Some(target_index) =
-                target.and_then(|t| instrs.binary_search_by(|rhs| rhs.address().cmp(&t)).ok())
-            {
-                jumps.push(idx, target_index);
-            }
+        let mut target: Option<u64> = None;
+
+        if detail
+            .groups()
+            .any(|g| g == InsnGroupId(X86InsnGroup::X86_GRP_JUMP as u8))
+        {
+            target = amd64_get_jump_target(&detail);
+        } else if detail
+            .groups()
+            .any(|g| g == InsnGroupId(X86InsnGroup::X86_GRP_CALL as u8))
+        {
+            target = amd64_get_call_target(&detail);
+        }
+
+        if target.is_none() {
+            continue;
+        }
+        let target: u64 = target.unwrap();
+
+        // If it's a regular inner jump, then we just display the address and move on.
+        if let Ok(target_index) = instrs.binary_search_by(|rhs| rhs.address().cmp(&target)) {
+            jumps.insert(idx, target_index);
+        } else if let Some(symbol) = symbols.iter().find(|sym| sym.addr == target) {
+            op_patches.insert(idx, symbol);
         }
     }
-    Ok(jumps)
+
+    Ok((jumps, op_patches))
+}
+
+fn amd64_is_call_opcode(opcode: &[u8]) -> bool {
+    if opcode.is_empty() {
+        return false;
+    }
+
+    match opcode[0] {
+        0xE8 | 0xFF | 0x9A => true,
+        _ => false,
+    }
 }
 
 fn amd64_is_jump_opcode(opcode: &[u8]) -> bool {
@@ -90,6 +119,33 @@ fn amd64_get_jump_target(detail: &InsnDetail<'_>) -> Option<u64> {
         match jump_operand.op_type {
             X86OperandType::Imm(offset) => Some(offset as u64),
 
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
+fn amd64_get_call_target(detail: &InsnDetail<'_>) -> Option<u64> {
+    use capstone::arch::x86::X86OperandType;
+
+    let x86_detail = match detail.arch_detail() {
+        capstone::arch::ArchDetail::X86Detail(d) => d,
+        _ => return None,
+    };
+
+    if amd64_is_call_opcode(&x86_detail.opcode()[0..]) {
+        let mut operands = x86_detail.operands();
+
+        let jump_operand = operands.next()?;
+
+        // If there is more than one operand for some reason, bail.
+        if operands.next().is_some() {
+            return None;
+        }
+
+        match jump_operand.op_type {
+            X86OperandType::Imm(offset) => Some(offset as u64),
             _ => None,
         }
     } else {

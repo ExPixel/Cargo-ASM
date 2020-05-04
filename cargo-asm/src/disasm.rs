@@ -1,4 +1,4 @@
-use crate::arch::{find_inner_jumps, InnerJumpTable};
+use crate::arch::{analyze_jumps, InnerJumpTable, OperandPatches};
 use crate::binary::analyze_binary;
 use crate::errors::{CargoAsmError, WCapstoneError};
 use crate::format::{write_symbol_and_instructions, OutputConfig};
@@ -124,13 +124,21 @@ pub fn disassemble_binary(
         .disasm_all(symbol_code, test_symbol.addr)
         .map_err(WCapstoneError)?;
 
-    let jumps = if config.sym_output.display_jumps {
-        find_inner_jumps(binary_info.arch, &cs, &instrs)?
+    let (jumps, op_patches) = if config.sym_output.display_jumps | config.sym_output.display_patches
+    {
+        analyze_jumps(&binary_info.symbols, binary_info.arch, &cs, &instrs)?
     } else {
-        InnerJumpTable::new()
+        (InnerJumpTable::new(), OperandPatches::new())
     };
 
-    write_symbol_and_instructions(&test_symbol, &instrs, &jumps, &config.sym_output, output)?;
+    write_symbol_and_instructions(
+        &test_symbol,
+        &instrs,
+        &jumps,
+        &op_patches,
+        &config.sym_output,
+        output,
+    )?;
 
     Ok(())
 }

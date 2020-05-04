@@ -1,18 +1,19 @@
-use crate::arch::InnerJumpTable;
+use crate::arch::{InnerJumpTable, OperandPatches};
 use crate::binary::Symbol;
 use capstone::Insn;
 use std::io::Write;
 
-pub fn write_symbol_and_instructions<'i>(
+pub fn write_symbol_and_instructions<'i, 's>(
     symbol: &Symbol,
     instrs: &[Insn<'i>],
     jumps: &InnerJumpTable,
+    op_patches: &OperandPatches<'s>,
     config: &OutputConfig,
     output: &mut dyn Write,
 ) -> anyhow::Result<()> {
     writeln!(output, "{}:", symbol.demangled_name)?;
 
-    let m = measure(&config, instrs, &jumps);
+    let m = measure(&config, instrs, jumps, op_patches);
     let jump_arrow_pieces = if config.display_jumps {
         create_jump_arrows_buffer(m.jumps_width, instrs.len(), jumps)
     } else {
@@ -48,12 +49,16 @@ pub fn write_symbol_and_instructions<'i>(
                 width = m.mnemonic_width
             )?;
 
-            write!(
-                output,
-                "{:<width$}    ",
-                instr.op_str().unwrap_or(""),
-                width = m.operands_width
-            )?;
+            if let (true, Some(patch)) = (config.display_patches, op_patches.get(line_idx)) {
+                write!(output, "{:<width$}", patch, width = m.operands_width)?;
+            } else {
+                write!(
+                    output,
+                    "{:<width$}",
+                    instr.op_str().unwrap_or(""),
+                    width = m.operands_width
+                )?;
+            }
         }
 
         writeln!(output)?;
@@ -278,10 +283,11 @@ pub struct OutputMeasure {
     pub operands_width: usize,
 }
 
-pub fn measure<'i>(
+pub fn measure<'i, 's>(
     config: &OutputConfig,
     instrs: &[Insn<'i>],
     jumps: &InnerJumpTable,
+    op_patches: &OperandPatches<'s>,
 ) -> OutputMeasure {
     use std::cmp::max;
 
@@ -291,7 +297,7 @@ pub fn measure<'i>(
         measure.jumps_width = jumps.max_display_offset() + 1;
     }
 
-    for instr in instrs.iter() {
+    for (idx, instr) in instrs.iter().enumerate() {
         if config.display_address {
             measure.address_width = max(measure.address_width, addr_len(instr.address()));
         }
@@ -305,10 +311,15 @@ pub fn measure<'i>(
                 measure.mnemonic_width,
                 instr.mnemonic().map(|m| m.len()).unwrap_or(0),
             );
-            measure.operands_width = max(
-                measure.operands_width,
-                instr.op_str().map(|ops| ops.len()).unwrap_or(0),
-            );
+
+            if let (true, Some(patch)) = (config.display_patches, op_patches.get(idx)) {
+                measure.operands_width = max(measure.operands_width, patch.len());
+            } else {
+                measure.operands_width = max(
+                    measure.operands_width,
+                    instr.op_str().map(|ops| ops.len()).unwrap_or(0),
+                );
+            }
         }
     }
 
@@ -350,6 +361,7 @@ fn hex_len(bytes: &[u8]) -> usize {
 #[derive(Default)]
 pub struct OutputConfig {
     pub display_address: bool,
+    pub display_patches: bool,
     pub display_bytes: bool,
     pub display_jumps: bool,
     pub display_instr: bool,

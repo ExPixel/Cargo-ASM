@@ -1,6 +1,7 @@
 pub mod elf;
 
 use goblin::Object;
+use once_cell::unsync::OnceCell;
 use std::borrow::Cow;
 use std::ops::Range;
 
@@ -124,6 +125,8 @@ pub struct Symbol<'a> {
     /// this will be the same string as `original_name`.
     pub demangled_name: Cow<'a, str>,
 
+    short_demangled_name: OnceCell<String>,
+
     /// Virtual address of the symbol during execution.
     pub addr: u64,
 
@@ -141,5 +144,103 @@ impl<'a> Symbol<'a> {
 
     pub fn offset_range(&self) -> Range<usize> {
         self.offset..(self.offset + self.size)
+    }
+
+    /// Returns a shorter version of a symbols name (removes trait information)
+    pub fn short_demangled_name(&self) -> &str {
+        self.short_demangled_name.get_or_init(|| {
+            let mut short_name = String::new();
+
+            for (is_impl, frag) in
+                rust_symbol_fragments(&self.demangled_name).map(rust_impl_fragment)
+            {
+                if is_impl {
+                    // We simplify all of the impl conversion stuff and just use the impl type
+                    // as the root type. e.g.
+                    //      anyhow::context::<impl anyhow::Context<T,E> for core::result::Result<T,E>>::with_context
+                    // becomes
+                    //      anyhow::Context::with_context
+                    short_name.clear();
+                }
+
+                if !short_name.is_empty() {
+                    short_name.push_str("::");
+                }
+                short_name.push_str(&frag);
+            }
+
+            short_name
+        })
+    }
+}
+
+fn rust_impl_fragment(impl_str: &str) -> (/* is_impl */ bool, &'_ str) {
+    let impl_start_index = if let Some(index) = impl_str.find("impl ") {
+        index + 5
+    } else {
+        return (false, impl_str);
+    };
+
+    let mut impl_end_index = impl_str.len();
+    for (idx, ch) in impl_str.char_indices().skip(impl_start_index) {
+        if !(ch.is_ascii_alphanumeric() || ch == '_' || ch == ':') {
+            impl_end_index = idx;
+            break;
+        }
+    }
+
+    let impl_main_type = &impl_str[impl_start_index..impl_end_index];
+
+    (true, impl_main_type)
+}
+
+fn rust_symbol_fragments(symbol: &str) -> RustSymFragmentIter<'_> {
+    RustSymFragmentIter { symbol, offset: 0 }
+}
+
+pub struct RustSymFragmentIter<'s> {
+    symbol: &'s str,
+    offset: usize,
+}
+
+impl<'s> Iterator for RustSymFragmentIter<'s> {
+    type Item = &'s str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.offset >= self.symbol.len() {
+            return None;
+        }
+
+        let mut depth = 0;
+        let mut last_was_colon = false;
+
+        for (idx, ch) in (&self.symbol[self.offset..]).char_indices() {
+            if depth > 0 {
+                if ch == '>' {
+                    depth -= 1;
+                } else if ch == '<' {
+                    depth += 1;
+                }
+            } else if ch == ':' {
+                if last_was_colon {
+                    if depth == 0 {
+                        let ret = &self.symbol[self.offset..(self.offset + idx - 1)];
+                        self.offset += idx + 1; // colon is 1 byte
+                        return Some(ret);
+                    }
+                } else {
+                    last_was_colon = true;
+                }
+            } else if ch == '<' {
+                last_was_colon = false;
+                depth += 1;
+            } else {
+                last_was_colon = false;
+            }
+        }
+
+        let ret = &self.symbol[self.offset..];
+        self.offset = self.symbol.len();
+        Some(ret)
     }
 }

@@ -1,6 +1,6 @@
 mod amd64;
 
-use crate::binary::BinaryArch;
+use crate::binary::{BinaryArch, Symbol};
 use amd64::*;
 use capstone::prelude::*;
 use capstone::Insn;
@@ -42,7 +42,7 @@ impl InnerJumpTable {
         }
     }
 
-    pub fn push(&mut self, source: usize, target: usize) {
+    pub fn insert(&mut self, source: usize, target: usize) {
         self.jumps.push(InnerJump {
             source,
             target,
@@ -89,6 +89,31 @@ impl InnerJumpTable {
     }
 }
 
+pub struct OperandPatches<'s> {
+    patches: Vec<Option<&'s Symbol<'s>>>,
+}
+
+impl<'s> OperandPatches<'s> {
+    pub fn new() -> OperandPatches<'s> {
+        OperandPatches {
+            patches: Vec::new(),
+        }
+    }
+
+    pub fn insert(&mut self, index: usize, symbol: &'s Symbol<'s>) {
+        if self.patches.len() < index {
+            self.patches.resize_with(index + 1, Default::default);
+        }
+        self.patches[index] = Some(symbol);
+    }
+
+    pub fn get(&self, index: usize) -> Option<&str> {
+        self.patches
+            .get(index)
+            .and_then(|sym| sym.as_ref().map(|s| s.short_demangled_name()))
+    }
+}
+
 fn do_ranges_overlap(a: RangeInclusive<usize>, b: RangeInclusive<usize>) -> bool {
     let a_top = std::cmp::min(*a.start(), *a.end());
     let b_bot = std::cmp::max(*b.start(), *b.end());
@@ -105,20 +130,21 @@ fn do_ranges_overlap(a: RangeInclusive<usize>, b: RangeInclusive<usize>) -> bool
     true
 }
 
-pub fn find_inner_jumps<'a>(
+pub fn analyze_jumps<'i, 's>(
+    symbols: &'s [Symbol<'s>],
     arch: BinaryArch,
     cs: &Capstone,
-    instrs: &[Insn<'a>],
-) -> anyhow::Result<InnerJumpTable> {
+    instrs: &[Insn<'i>],
+) -> anyhow::Result<(InnerJumpTable, OperandPatches<'s>)> {
     let mut jumps = match arch {
-        BinaryArch::AMD64 => find_inner_jumps_amd64(cs, instrs),
+        BinaryArch::AMD64 => analyze_jumps_amd64(symbols, cs, instrs),
         _ => {
             eprintln!("jump analysis for arch {:?} not yet supported", arch);
-            Ok(InnerJumpTable::new())
+            Ok((InnerJumpTable::new(), OperandPatches::new()))
         }
     };
 
-    if let Ok(ref mut j) = jumps {
+    if let Ok((ref mut j, _)) = jumps {
         j.sort_and_calc_overlaps();
     }
 

@@ -46,6 +46,7 @@ pub fn analyze_elf<'a>(elf: &Elf<'a>) -> anyhow::Result<BinaryInfo<'a>> {
         symbols.push(Symbol {
             original_name: Cow::from(sym_name),
             demangled_name: sym_name_demangled,
+            short_demangled_name: Default::default(),
 
             addr: sym_addr,
             offset: sym_offset as usize,
