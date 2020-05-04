@@ -6,8 +6,10 @@ mod errors;
 mod format;
 
 use anyhow::Context;
-use cli::{CliCommand, DisasmArgs, ListArgs};
+use cli::{CargoArgs, CliCommand, DisasmArgs, ListArgs};
 use disasm::DisasmConfig;
+use errors::CargoAsmError;
+use std::path::PathBuf;
 
 fn main() {
     if let Err(err) = run() {
@@ -27,19 +29,13 @@ fn run_command_list(args: ListArgs) -> anyhow::Result<()> {
     use binary::analyze_binary;
 
     let binary_path = if let Some(ref path) = args.binary_path {
-        path
+        std::borrow::Cow::from(path)
     } else {
-        // FIXME use cargo metadata to find binary path.
-        eprintln!("no binary specified");
-        std::process::exit(1);
+        std::borrow::Cow::from(get_cargo_binary_path(&args.cargo)?)
     };
 
-    let binary = std::fs::read(binary_path).with_context(|| {
-        format!(
-            "failed to read file `{}`",
-            binary_path.as_path().to_string_lossy()
-        )
-    })?;
+    let binary = std::fs::read(&binary_path)
+        .with_context(|| format!("failed to read file `{}`", binary_path.to_string_lossy()))?;
 
     let binary_info = analyze_binary(&binary)?;
     let matcher = disasm::SymbolMatcher::new(&args.needle);
@@ -79,19 +75,13 @@ fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
     let mut stdout = std::io::stdout();
 
     let binary_path = if let Some(ref path) = args.binary_path {
-        path
+        std::borrow::Cow::from(path)
     } else {
-        // FIXME use cargo metadata to find binary path.
-        eprintln!("no binary specified");
-        std::process::exit(1);
+        std::borrow::Cow::from(get_cargo_binary_path(&args.cargo)?)
     };
 
-    let binary = std::fs::read(binary_path).with_context(|| {
-        format!(
-            "failed to read file `{}`",
-            binary_path.as_path().to_string_lossy()
-        )
-    })?;
+    let binary = std::fs::read(&binary_path)
+        .with_context(|| format!("failed to read file `{}`", binary_path.to_string_lossy()))?;
 
     let mut config = DisasmConfig::default();
     config.sym_output.display_address = !args.hide_address;
@@ -109,4 +99,48 @@ fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
     )?;
 
     Ok(())
+}
+
+fn get_cargo_binary_path(cargo_args: &CargoArgs) -> anyhow::Result<PathBuf> {
+    use cargo_metadata::Target;
+
+    let mut cmd = cargo_metadata::MetadataCommand::new();
+    cmd.no_deps();
+    cmd.other_options(&["--offline".to_string()]);
+
+    if let Some(ref manifest_path) = cargo_args.manifest_path {
+        cmd.manifest_path(manifest_path);
+    }
+
+    let metadata = cmd.exec()?;
+
+    // A vec of targets with executables.
+    let bin_targets = metadata
+        .workspace_members
+        .iter()
+        .filter_map(|id| metadata.packages.iter().find(|pkg| pkg.id == *id))
+        .flat_map(|pkg| pkg.targets.iter())
+        .filter(|target| target.kind.iter().any(|k| k == "bin"))
+        .collect::<Vec<&Target>>();
+
+    if bin_targets.len() > 1 {
+        eprintln!(
+            "warning: more than one 'bin' target found, using {}.",
+            bin_targets[0].name
+        );
+    } else if bin_targets.is_empty() {
+        return Err(CargoAsmError::NoCargoBinary.into());
+    }
+
+    let mut binary_path = PathBuf::from(&metadata.target_directory);
+    binary_path.push(
+        &cargo_args
+            .profile
+            .as_ref()
+            .map(|c| c as &str)
+            .unwrap_or("debug"),
+    );
+    binary_path.push(&bin_targets[0].name);
+
+    Ok(binary_path)
 }

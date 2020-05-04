@@ -1,6 +1,7 @@
 #[derive(Clone, Debug)]
 pub enum CargoAsmError {
     NoSymbolMatch(String),
+    NoCargoBinary,
 }
 
 impl std::error::Error for CargoAsmError {}
@@ -11,6 +12,8 @@ impl std::fmt::Display for CargoAsmError {
             CargoAsmError::NoSymbolMatch(ref search_string) => {
                 write!(f, "no symbol matched the search string `{}`", search_string)
             }
+
+            CargoAsmError::NoCargoBinary => write!(f, "no cargo binary found"),
         }
     }
 }
