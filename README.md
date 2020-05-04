@@ -5,7 +5,7 @@ Disassemble single symbols in a binary.
 
 ### TODO
 
-- [ ] Read Cargo Metadata in order to find binaries automatically.
+- [x] Read Cargo Metadata in order to find binaries automatically.
 
 - [x] Disassemble ELF binaries. **Linux**
 - [ ] Disassemble PE/COFF binaries. **Windows**
@@ -19,115 +19,95 @@ Disassemble single symbols in a binary.
 
 ### Examples
 
-**These have to be run from within the cargo-asm directory.**
+**These have to be run from within the cargo-asm directory. They also require the the binary is compiled via cargo build first.**
 
 **Listing symbols in a binary:**
 
-`cargo run -- list --binary=<<MY BINARY>> "SharedGbaScheduler"`
+`cargo run -- list main`
 
 Example Output:
 ```
-[address: 0x264020] [size: 395 bytes] pyrite_gba::scheduler::SharedGbaScheduler::purge::h24b3d5d65acad74a
-[address: 0x2662B0] [size: 251 bytes] pyrite_gba::scheduler::SharedGbaScheduler::new::hd31299236c8d984b
-[address: 0x2663B0] [size:  29 bytes] <pyrite_gba::scheduler::SharedGbaScheduler as core::clone::Clone>::clone::h150cc913f28b405a
+[address: 0x228300] [size: 310 bytes] cargo_asm::main::he2817aa33cca4269
+[address: 0x3F0880] [size: 247 bytes] core::num::dec2flt::algorithm::round_by_remainder::hf61317af6f74374c
+[address: 0x22A4A0] [size:  47 bytes] main
 ```
 
 **Disassembling a symbol**
 
-`cargo run -- disasm --binary=<<MY BINARY>> "SharedGbaScheduler::purge"`
+`cargo run -- disasm cargo_asm::main`
 
 Example Output:
 ```asm
-pyrite_gba::scheduler::SharedGbaScheduler::purge::h24b3d5d65acad74a:
-    264020:    55                                                    push    rbp                                    
-    264021:    48 89 E5                                              mov     rbp, rsp                               
-    264024:    41 57                                                 push    r15                                    
-    264026:    41 56                                                 push    r14                                    
-    264028:    53                                                    push    rbx                                    
-    264029:    50                                                    push    rax                                    
-    26402a:    4C 8B 37                                              mov     r14, qword ptr [rdi]                   
-    26402d:    49 8B 46 10                                           mov     rax, qword ptr [r14 + 0x10]            
-    264031:    48 85 C0                                              test    rax, rax                               
-    264034:    0F 84 B4 00 00 00                ┌───────────────────◀je      0x2640ee                               
-    26403a:    31 DB                            │                    xor     ebx, ebx                               
-    26403c:    4C 8B 3D C5 2A 0A 00             │                    mov     r15, qword ptr [rip + 0xa2ac5]         
-    264043:    EB 17                            │                 ┌─◀jmp     0x26405c                               
-    264045:    66 2E 0F 1F 84 00 00 00 00 00    │                 │  nop     word ptr cs:[rax + rax]                
-    26404f:    90                               │                 │  nop                                            
-    264050:    48 89 F3                         │               ┌─┼─▶mov     rbx, rsi                               
-    264053:    48 39 C3                         │               │ │  cmp     rbx, rax                               
-    264056:    0F 83 92 00 00 00                │ ┌─────────────┼─┼─◀jae     0x2640ee                               
-    26405c:    48 83 FB 1F                      │ │             │ ├─▶cmp     rbx, 0x1f                              
-    264060:    0F 87 93 00 00 00                │ │ ┌───────────┼─┼─◀ja      0x2640f9                               
-    264066:    48 8D 73 01                      │ │ │           │ │  lea     rsi, [rbx + 1]                         
-    26406a:    41 80 7C DE 1C 07                │ │ │           │ │  cmp     byte ptr [r14 + rbx*8 + 0x1c], 7       
-    264070:    75 DE                            │ │ │           └─┼─◀jne     0x264050                               
-    264072:    48 83 FE 1F                      │ │ │             │  cmp     rsi, 0x1f                              
-    264076:    0F 87 94 00 00 00                │ │ │ ┌───────────┼─◀ja      0x264110                               
-    26407c:    41 8B 44 DE 20                   │ │ │ │           │  mov     eax, dword ptr [r14 + rbx*8 + 0x20]    
-    264081:    41 03 44 DE 18                   │ │ │ │           │  add     eax, dword ptr [r14 + rbx*8 + 0x18]    
-    264086:    0F 82 98 00 00 00                │ │ │ │ ┌─────────┼─◀jb      0x264124                               
-    26408c:    41 89 44 DE 20                   │ │ │ │ │         │  mov     dword ptr [r14 + rbx*8 + 0x20], eax    
-    264091:    49 8B 56 10                      │ │ │ │ │         │  mov     rdx, qword ptr [r14 + 0x10]            
-    264095:    48 39 DA                         │ │ │ │ │         │  cmp     rdx, rbx                               
-    264098:    0F 86 A1 00 00 00                │ │ │ │ │ ┌───────┼─◀jbe     0x26413f                               
-    26409e:    48 83 FA 20                      │ │ │ │ │ │       │  cmp     rdx, 0x20                              
-    2640a2:    0F 87 B2 00 00 00                │ │ │ │ │ │ ┌─────┼─◀ja      0x26415a                               
-    2640a8:    48 29 F2                         │ │ │ │ │ │ │     │  sub     rdx, rsi                               
-    2640ab:    B8 20 00 00 00                   │ │ │ │ │ │ │     │  mov     eax, 0x20                              
-    2640b0:    48 29 D0                         │ │ │ │ │ │ │     │  sub     rax, rdx                               
-    2640b3:    48 39 D8                         │ │ │ │ │ │ │     │  cmp     rax, rbx                               
-    2640b6:    0F 82 B9 00 00 00                │ │ │ │ │ │ │ ┌───┼─◀jb      0x264175                               
-    2640bc:    49 8D 34 F6                      │ │ │ │ │ │ │ │   │  lea     rsi, [r14 + rsi*8]                     
-    2640c0:    48 83 C6 18                      │ │ │ │ │ │ │ │   │  add     rsi, 0x18                              
-    2640c4:    49 8D 3C DE                      │ │ │ │ │ │ │ │   │  lea     rdi, [r14 + rbx*8]                     
-    2640c8:    48 83 C7 18                      │ │ │ │ │ │ │ │   │  add     rdi, 0x18                              
-    2640cc:    48 C1 E2 03                      │ │ │ │ │ │ │ │   │  shl     rdx, 3                                 
-    2640d0:    41 FF D7                         │ │ │ │ │ │ │ │   │  call    r15                                    
-    2640d3:    49 8B 46 10                      │ │ │ │ │ │ │ │   │  mov     rax, qword ptr [r14 + 0x10]            
-    2640d7:    48 83 E8 01                      │ │ │ │ │ │ │ │   │  sub     rax, 1                                 
-    2640db:    0F 82 AF 00 00 00                │ │ │ │ │ │ │ │ ┌─┼─◀jb      0x264190                               
-    2640e1:    49 89 46 10                      │ │ │ │ │ │ │ │ │ │  mov     qword ptr [r14 + 0x10], rax            
-    2640e5:    48 39 C3                         │ │ │ │ │ │ │ │ │ │  cmp     rbx, rax                               
-    2640e8:    0F 82 6E FF FF FF                │ │ │ │ │ │ │ │ │ └─◀jb      0x26405c                               
-    2640ee:    48 83 C4 08                      └─┴─┼─┼─┼─┼─┼─┼─┼───▶add     rsp, 8                                 
-    2640f2:    5B                                   │ │ │ │ │ │ │    pop     rbx                                    
-    2640f3:    41 5E                                │ │ │ │ │ │ │    pop     r14                                    
-    2640f5:    41 5F                                │ │ │ │ │ │ │    pop     r15                                    
-    2640f7:    5D                                   │ │ │ │ │ │ │    pop     rbp                                    
-    2640f8:    C3                                   │ │ │ │ │ │ │    ret                                            
-    2640f9:    48 8D 3D B0 28 09 00                 └─┼─┼─┼─┼─┼─┼───▶lea     rdi, [rip + 0x928b0]                   
-    264100:    BA 20 00 00 00                         │ │ │ │ │ │    mov     edx, 0x20                              
-    264105:    48 89 DE                               │ │ │ │ │ │    mov     rsi, rbx                               
-    264108:    FF 15 02 26 0A 00                      │ │ │ │ │ │    call    qword ptr [rip + 0xa2602]              
-    26410e:    0F 0B                                  │ │ │ │ │ │    ud2                                            
-    264110:    48 8D 3D B1 28 09 00                   └─┼─┼─┼─┼─┼───▶lea     rdi, [rip + 0x928b1]                   
-    264117:    BA 20 00 00 00                           │ │ │ │ │    mov     edx, 0x20                              
-    26411c:    FF 15 EE 25 0A 00                        │ │ │ │ │    call    qword ptr [rip + 0xa25ee]              
-    264122:    0F 0B                                    │ │ │ │ │    ud2                                            
-    264124:    48 8D 3D D5 EA E2 FF                     └─┼─┼─┼─┼───▶lea     rdi, [rip - 0x1d152b]                  
-    26412b:    48 8D 15 96 28 09 00                       │ │ │ │    lea     rdx, [rip + 0x92896]                   
-    264132:    BE 1C 00 00 00                             │ │ │ │    mov     esi, 0x1c                              
-    264137:    FF 15 6B 25 0A 00                          │ │ │ │    call    qword ptr [rip + 0xa256b]              
-    26413d:    0F 0B                                      │ │ │ │    ud2                                            
-    26413f:    48 8D 3D 76 0C E3 FF                       └─┼─┼─┼───▶lea     rdi, [rip - 0x1cf38a]                  
-    264146:    48 8D 15 DB 39 09 00                         │ │ │    lea     rdx, [rip + 0x939db]                   
-    26414d:    BE 1B 00 00 00                               │ │ │    mov     esi, 0x1b                              
-    264152:    FF 15 50 25 0A 00                            │ │ │    call    qword ptr [rip + 0xa2550]              
-    264158:    0F 0B                                        │ │ │    ud2                                            
-    26415a:    48 8D 3D BF 0C E3 FF                         └─┼─┼───▶lea     rdi, [rip - 0x1cf341]                  
-    264161:    48 8D 15 C0 39 09 00                           │ │    lea     rdx, [rip + 0x939c0]                   
-    264168:    BE 14 00 00 00                                 │ │    mov     esi, 0x14                              
-    26416d:    FF 15 35 25 0A 00                              │ │    call    qword ptr [rip + 0xa2535]              
-    264173:    0F 0B                                          │ │    ud2                                            
-    264175:    48 8D 3D B8 0C E3 FF                           └─┼───▶lea     rdi, [rip - 0x1cf348]                  
-    26417c:    48 8D 15 A5 39 09 00                             │    lea     rdx, [rip + 0x939a5]                   
-    264183:    BE 15 00 00 00                                   │    mov     esi, 0x15                              
-    264188:    FF 15 1A 25 0A 00                                │    call    qword ptr [rip + 0xa251a]              
-    26418e:    0F 0B                                            │    ud2                                            
-    264190:    48 8D 3D 89 EA E2 FF                             └───▶lea     rdi, [rip - 0x1d1577]                  
-    264197:    48 8D 15 42 28 09 00                                  lea     rdx, [rip + 0x92842]                   
-    26419e:    BE 21 00 00 00                                        mov     esi, 0x21                              
-    2641a3:    FF 15 FF 24 0A 00                                     call    qword ptr [rip + 0xa24ff]              
-    2641a9:    0F 0B                                                 ud2   
+cargo_asm::main::he2817aa33cca4269:
+    228300:    48 81 EC 88 00 00 00                 sub       rsp, 0x88                          
+    228307:    E8 34 01 00 00                       call      0x228440                           
+    22830c:    48 89 44 24 18                       mov       qword ptr [rsp + 0x18], rax        
+    228311:    EB 0C                         ┌─────◀jmp       0x22831f                           
+    228313:    48 8B 7C 24 78                │ ┌─┬─▶mov       rdi, qword ptr [rsp + 0x78]        
+    228318:    E8 63 AE FE FF                │ │ │  call      0x213180                           
+    22831d:    0F 0B                         │ │ │  ud2                                          
+    22831f:    31 C0                         └─┼─┼─▶xor       eax, eax                           
+    228321:    89 C1                           │ │  mov       ecx, eax                           
+    228323:    48 83 7C 24 18 00               │ │  cmp       qword ptr [rsp + 0x18], 0          
+    228329:    BA 01 00 00 00                  │ │  mov       edx, 1                             
+    22832e:    48 0F 46 D1                     │ │  cmovbe    rdx, rcx                           
+    228332:    48 83 FA 01                     │ │  cmp       rdx, 1                             
+    228336:    74 0F                         ┌─┼─┼─◀je        0x228347                           
+    228338:    48 8D 7C 24 18                │ │ │  lea       rdi, [rsp + 0x18]                  
+    22833d:    E8 1E 02 01 00                │ │ │  call      0x238560                           
+    228342:    E9 C8 00 00 00          ┌─────┼─┼─┼─◀jmp       0x22840f                           
+    228347:    48 8B 44 24 18          │     └─┼─┼─▶mov       rax, qword ptr [rsp + 0x18]        
+    22834c:    48 89 44 24 20          │       │ │  mov       qword ptr [rsp + 0x20], rax        
+    228351:    48 8B 35 20 D6 7D 00    │       │ │  mov       rsi, qword ptr [rip + 0x7dd620]    
+    228358:    48 8D 44 24 20          │       │ │  lea       rax, [rsp + 0x20]                  
+    22835d:    48 89 44 24 68          │       │ │  mov       qword ptr [rsp + 0x68], rax        
+    228362:    48 8B 44 24 68          │       │ │  mov       rax, qword ptr [rsp + 0x68]        
+    228367:    48 89 44 24 70          │       │ │  mov       qword ptr [rsp + 0x70], rax        
+    22836c:    48 8B 7C 24 70          │       │ │  mov       rdi, qword ptr [rsp + 0x70]        
+    228371:    48 8D 05 38 6A 0F 00    │       │ │  lea       rax, [rip + 0xf6a38]               
+    228378:    48 89 74 24 10          │       │ │  mov       qword ptr [rsp + 0x10], rsi        
+    22837d:    48 89 C6                │       │ │  mov       rsi, rax                           
+    228380:    E8 CB 7E FF FF          │       │ │  call      0x220250                           
+    228385:    48 89 54 24 08          │       │ │  mov       qword ptr [rsp + 8], rdx           
+    22838a:    48 89 04 24             │       │ │  mov       qword ptr [rsp], rax               
+    22838e:    EB 00                   │     ┌─┼─┼─◀jmp       0x228390                           
+    228390:    48 8B 04 24             │     └─┼─┼─▶mov       rax, qword ptr [rsp]               
+    228394:    48 89 44 24 58          │       │ │  mov       qword ptr [rsp + 0x58], rax        
+    228399:    48 8B 4C 24 08          │       │ │  mov       rcx, qword ptr [rsp + 8]           
+    22839e:    48 89 4C 24 60          │       │ │  mov       qword ptr [rsp + 0x60], rcx        
+    2283a3:    48 8D 7C 24 28          │       │ │  lea       rdi, [rsp + 0x28]                  
+    2283a8:    BA 02 00 00 00          │       │ │  mov       edx, 2                             
+    2283ad:    48 8D 4C 24 58          │       │ │  lea       rcx, [rsp + 0x58]                  
+    2283b2:    41 B8 01 00 00 00       │       │ │  mov       r8d, 1                             
+    2283b8:    48 8B 74 24 10          │       │ │  mov       rsi, qword ptr [rsp + 0x10]        
+    2283bd:    E8 3E B0 00 00          │       │ │  call      0x233400                           
+    2283c2:    EB 2B                   │ ┌─────┼─┼─◀jmp       0x2283ef                           
+    2283c4:    31 C0                   │ │   ┌─┼─┼─▶xor       eax, eax                           
+    2283c6:    89 C1                   │ │   │ │ │  mov       ecx, eax                           
+    2283c8:    48 83 7C 24 18 00       │ │   │ │ │  cmp       qword ptr [rsp + 0x18], 0          
+    2283ce:    BA 01 00 00 00          │ │   │ │ │  mov       edx, 1                             
+    2283d3:    48 0F 46 D1             │ │   │ │ │  cmovbe    rdx, rcx                           
+    2283d7:    48 83 FA 01             │ │   │ │ │  cmp       rdx, 1                             
+    2283db:    0F 84 32 FF FF FF       │ │   │ │ └─◀je        0x228313                           
+    2283e1:    EB 34                   │ │ ┌─┼─┼───◀jmp       0x228417                           
+    2283e3:    48 8D 7C 24 20          │ │ │ │ │ ┌─▶lea       rdi, [rsp + 0x20]                  
+    2283e8:    E8 03 01 01 00          │ │ │ │ │ │  call      0x2384f0                           
+    2283ed:    EB D5                   │ │ │ └─┼─┼─◀jmp       0x2283c4                           
+    2283ef:    48 8D 05 8A 77 4A 00    │ └─┼───┼─┼─▶lea       rax, [rip + 0x4a778a]              
+    2283f6:    48 8D 7C 24 28          │   │   │ │  lea       rdi, [rsp + 0x28]                  
+    2283fb:    FF D0                   │   │   │ │  call      rax                                
+    2283fd:    EB 00                   │   │ ┌─┼─┼─◀jmp       0x2283ff                           
+    2283ff:    48 8D 05 FA A5 4A 00    │   │ └─┼─┼─▶lea       rax, [rip + 0x4aa5fa]              
+    228406:    BF 01 00 00 00          │   │   │ │  mov       edi, 1                             
+    22840b:    FF D0                   │   │   │ │  call      rax                                
+    22840d:    EB 25                   │   │ ┌─┼─┼─◀jmp       0x228434                           
+    22840f:    48 81 C4 88 00 00 00    └───┼─┼─┼─┼─▶add       rsp, 0x88                          
+    228416:    C3                          │ │ │ │  ret                                          
+    228417:    48 8D 7C 24 18              └─┼─┼─┼─▶lea       rdi, [rsp + 0x18]                  
+    22841c:    E8 3F 01 01 00                │ │ │  call      0x238560                           
+    228421:    E9 ED FE FF FF                │ └─┼─◀jmp       0x228313                           
+    228426:    48 89 44 24 78                │   │  mov       qword ptr [rsp + 0x78], rax        
+    22842b:    89 94 24 80 00 00 00          │   │  mov       dword ptr [rsp + 0x80], edx        
+    228432:    EB AF                         │   └─◀jmp       0x2283e3                           
+    228434:    0F 0B                         └─────▶ud2                 
 ```
