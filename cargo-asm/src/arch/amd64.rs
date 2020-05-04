@@ -1,6 +1,7 @@
 use super::{InnerJumpTable, OperandPatches};
 use crate::binary::Symbol;
 use crate::errors::WCapstoneError;
+use capstone::arch::x86::X86OperandType;
 use capstone::prelude::*;
 use capstone::Insn;
 
@@ -23,12 +24,12 @@ pub fn analyze_jumps_amd64<'i, 's>(
             .groups()
             .any(|g| g == InsnGroupId(X86InsnGroup::X86_GRP_JUMP as u8))
         {
-            target = amd64_get_jump_target(&detail);
+            target = amd64_get_jump_target(instr, &detail);
         } else if detail
             .groups()
             .any(|g| g == InsnGroupId(X86InsnGroup::X86_GRP_CALL as u8))
         {
-            target = amd64_get_call_target(&detail);
+            target = amd64_get_call_target(instr, &detail);
         }
 
         if target.is_none() {
@@ -98,9 +99,7 @@ fn amd64_is_jump_opcode(opcode: &[u8]) -> bool {
     }
 }
 
-fn amd64_get_jump_target(detail: &InsnDetail<'_>) -> Option<u64> {
-    use capstone::arch::x86::X86OperandType;
-
+fn amd64_get_jump_target(instr: &Insn<'_>, detail: &InsnDetail<'_>) -> Option<u64> {
     let x86_detail = match detail.arch_detail() {
         capstone::arch::ArchDetail::X86Detail(d) => d,
         _ => return None,
@@ -116,19 +115,13 @@ fn amd64_get_jump_target(detail: &InsnDetail<'_>) -> Option<u64> {
             return None;
         }
 
-        match jump_operand.op_type {
-            X86OperandType::Imm(offset) => Some(offset as u64),
-
-            _ => None,
-        }
+        get_operand_value(instr, jump_operand.op_type)
     } else {
         None
     }
 }
 
-fn amd64_get_call_target(detail: &InsnDetail<'_>) -> Option<u64> {
-    use capstone::arch::x86::X86OperandType;
-
+fn amd64_get_call_target(instr: &Insn<'_>, detail: &InsnDetail<'_>) -> Option<u64> {
     let x86_detail = match detail.arch_detail() {
         capstone::arch::ArchDetail::X86Detail(d) => d,
         _ => return None,
@@ -137,18 +130,37 @@ fn amd64_get_call_target(detail: &InsnDetail<'_>) -> Option<u64> {
     if amd64_is_call_opcode(&x86_detail.opcode()[0..]) {
         let mut operands = x86_detail.operands();
 
-        let jump_operand = operands.next()?;
+        let call_operand = operands.next()?;
 
         // If there is more than one operand for some reason, bail.
         if operands.next().is_some() {
             return None;
         }
 
-        match jump_operand.op_type {
-            X86OperandType::Imm(offset) => Some(offset as u64),
-            _ => None,
-        }
+        get_operand_value(instr, call_operand.op_type)
     } else {
         None
+    }
+}
+
+fn get_operand_value(instr: &Insn<'_>, operand: X86OperandType) -> Option<u64> {
+    use capstone::arch::x86::X86Reg::{X86_REG_EIP, X86_REG_INVALID, X86_REG_RIP};
+
+    match operand {
+        X86OperandType::Imm(offset) => Some(offset as u64),
+        X86OperandType::Mem(op_mem) => {
+            // Scale is ignored because we don't use the index register.
+            if op_mem.segment() == 0
+                && (op_mem.base() == RegId(X86_REG_RIP as _)
+                    || op_mem.base() == RegId(X86_REG_EIP as _))
+                && op_mem.index() == RegId(X86_REG_INVALID as _)
+            {
+                let current_rip = instr.address() + instr.bytes().len() as u64;
+                Some(current_rip.wrapping_add(op_mem.disp() as u64))
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }
