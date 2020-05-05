@@ -5,7 +5,7 @@ authors = ["Adolph C. <adolphc@outlook.com>"]
 edition = "2018"
 
 [dependencies]
-capstone = { path = "../capstone-rs/capstone-rs" }
+capstone = { git = "https://github.com/ExPixel/capstone-rs.git", branch = "master" }
 gimli = "0.20"
 clap = "2.33"
 anyhow = "1.0"

@@ -1,3 +1,0 @@
-[submodule "capstone-rs"]
-	path = capstone-rs
-	url = https://github.com/ExPixel/capstone-rs.git

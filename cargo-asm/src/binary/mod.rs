@@ -1,3 +1,4 @@
+pub mod dwarf;
 pub mod elf;
 
 use goblin::Object;
