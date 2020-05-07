@@ -36,7 +36,7 @@ pub fn write_symbol_and_instructions<'i, 's>(
         }
 
         // Some left padding
-        write!(output, "    ")?;
+        write!(output, "  ")?;
 
         if config.display_address {
             write!(
