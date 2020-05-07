@@ -1,5 +1,6 @@
 use crate::arch::{InnerJumpTable, OperandPatches};
 use crate::binary::{LineMappings, Symbol};
+use crate::line_cache::FileLineCache;
 use capstone::Insn;
 use std::io::Write;
 
@@ -9,6 +10,7 @@ pub fn write_symbol_and_instructions<'i, 's>(
     jumps: &InnerJumpTable,
     op_patches: &OperandPatches<'s>,
     line_mappings: &LineMappings<'s>,
+    line_cache: &mut FileLineCache,
     config: &OutputConfig,
     output: &mut dyn Write,
 ) -> anyhow::Result<()> {
@@ -22,6 +24,13 @@ pub fn write_symbol_and_instructions<'i, 's>(
     };
 
     for (line_idx, instr) in instrs.iter().enumerate() {
+        if let Some(line) = line_mappings
+            .get(instr.address())?
+            .and_then(|(path, line)| line_cache.get_line(path, line))
+        {
+            writeln!(output, "{}", line)?;
+        }
+
         // Some left padding
         write!(output, "    ")?;
 

@@ -5,9 +5,8 @@ use std::path::{Path, PathBuf};
 
 pub type UnitRange = (Range<u64>, usize);
 
-pub struct DwarfLineMapper<'a, R: 'a + gimli::Reader> {
+pub struct DwarfLineMapper<R: gimli::Reader> {
     dwarf: gimli::Dwarf<R>,
-    binary: &'a [u8],
 
     /// Maps ranges of addresses to compilation units. Each range is associated with an index into
     /// the `units` vector.
@@ -16,11 +15,11 @@ pub struct DwarfLineMapper<'a, R: 'a + gimli::Reader> {
     units: Vec<LazyUnit<R>>,
 }
 
-impl<'a, R: 'a + gimli::Reader> DwarfLineMapper<'a, R> {
-    pub fn new<L, S>(binary: &'a [u8], loader: L, sup_loader: S) -> anyhow::Result<Self>
+impl<R: gimli::Reader> DwarfLineMapper<R> {
+    pub fn new<L, S>(loader: L, sup_loader: S) -> anyhow::Result<Self>
     where
-        L: 'a + Fn(gimli::SectionId) -> Result<R, anyhow::Error>,
-        S: 'a + Fn(gimli::SectionId) -> Result<R, anyhow::Error>,
+        L: Fn(gimli::SectionId) -> Result<R, anyhow::Error>,
+        S: Fn(gimli::SectionId) -> Result<R, anyhow::Error>,
     {
         let dwarf = gimli::Dwarf::load(loader, sup_loader)?;
 
@@ -35,7 +34,6 @@ impl<'a, R: 'a + gimli::Reader> DwarfLineMapper<'a, R> {
         );
 
         Ok(DwarfLineMapper {
-            binary,
             dwarf,
             unit_ranges,
             units,
@@ -147,7 +145,7 @@ impl<'a, R: 'a + gimli::Reader> DwarfLineMapper<'a, R> {
     }
 }
 
-impl<'a, R: 'a + gimli::Reader> LineMapper for DwarfLineMapper<'a, R> {
+impl<R: gimli::Reader> LineMapper for DwarfLineMapper<R> {
     fn map_address_to_line(&self, address: u64) -> anyhow::Result<Option<(&Path, u32)>> {
         if let Some(unit_index) = self.unit_index_for_address(address) {
             self.units[unit_index].addr2line(&self.dwarf, address)
@@ -159,7 +157,11 @@ impl<'a, R: 'a + gimli::Reader> LineMapper for DwarfLineMapper<'a, R> {
 
 pub struct LazyUnit<R: gimli::Reader> {
     unit: gimli::Unit<R>,
+
+    // FIXME use this for syntax hilighting maybe...or just remove it.
+    #[allow(dead_code)]
     lang: Option<gimli::DwLang>,
+
     lines: OnceCell<Lines>,
 }
 

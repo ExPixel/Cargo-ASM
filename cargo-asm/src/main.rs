@@ -4,6 +4,7 @@ mod cli;
 mod disasm;
 mod errors;
 mod format;
+mod line_cache;
 
 use anyhow::Context;
 use cli::{CargoArgs, CliCommand, DisasmArgs, ListArgs};
@@ -84,9 +85,9 @@ fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
         .with_context(|| format!("failed to read file `{}`", binary_path.to_string_lossy()))?;
 
     let mut config = DisasmConfig::default();
-    config.sym_output.display_address = !args.hide_address;
-    config.sym_output.display_bytes = !args.hide_bytes;
-    config.sym_output.display_jumps = !args.hide_jumps;
+    config.sym_output.display_address = args.show_addrs;
+    config.sym_output.display_bytes = args.show_bytes;
+    config.sym_output.display_jumps = args.show_jumps;
     config.sym_output.display_patches = true;
     config.sym_output.display_instr = true;
     config.display_length = true;

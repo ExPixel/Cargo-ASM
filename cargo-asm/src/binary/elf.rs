@@ -65,7 +65,7 @@ pub fn analyze_elf<'a>(elf: Elf<'a>, binary: &'a [u8]) -> anyhow::Result<BinaryI
         };
         let sup_loader =
             |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::LittleEndian));
-        Box::new(DwarfLineMapper::new(binary, loader, sup_loader)?)
+        Box::new(DwarfLineMapper::new(loader, sup_loader)?)
     } else {
         let loader = move |section: gimli::SectionId| {
             get_section_by_name(&elf, binary, section.name())
@@ -73,7 +73,7 @@ pub fn analyze_elf<'a>(elf: Elf<'a>, binary: &'a [u8]) -> anyhow::Result<BinaryI
         };
         let sup_loader =
             |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::BigEndian));
-        Box::new(DwarfLineMapper::new(binary, loader, sup_loader)?)
+        Box::new(DwarfLineMapper::new(loader, sup_loader)?)
     };
     let line_mappings = LineMappings::new(dwarf_line_mapper);
 

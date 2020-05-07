@@ -177,6 +177,8 @@ impl<'a> Symbol<'a> {
     }
 }
 
+// FIXME This is not longer required it looks like, I can probably just pass the mapper directory.
+//       I could also just merge this with FileLineCache.
 pub struct LineMappings<'a> {
     mapper: Box<dyn 'a + LineMapper>,
 }
@@ -186,9 +188,8 @@ impl<'a> LineMappings<'a> {
         LineMappings { mapper }
     }
 
-    pub fn get(&self, address: u64) -> anyhow::Result<Option<()>> {
-        // FIXME implement this here
-        Ok(self.mapper.map_address_to_line(address)?.map(|_| ()))
+    pub fn get(&self, address: u64) -> anyhow::Result<Option<(&Path, u32)>> {
+        self.mapper.map_address_to_line(address)
     }
 }
 

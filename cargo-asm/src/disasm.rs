@@ -2,6 +2,7 @@ use crate::arch::{analyze_jumps, InnerJumpTable, OperandPatches};
 use crate::binary::analyze_binary;
 use crate::errors::{CargoAsmError, WCapstoneError};
 use crate::format::{write_symbol_and_instructions, OutputConfig};
+use crate::line_cache::FileLineCache;
 use capstone::prelude::*;
 use std::io::Write;
 
@@ -131,12 +132,15 @@ pub fn disassemble_binary(
         (InnerJumpTable::new(), OperandPatches::new())
     };
 
+    let mut file_line_cache = FileLineCache::new();
+
     write_symbol_and_instructions(
         &test_symbol,
         &instrs,
         &jumps,
         &op_patches,
         &binary_info.line_mappings,
+        &mut file_line_cache,
         &config.sym_output,
         output,
     )?;

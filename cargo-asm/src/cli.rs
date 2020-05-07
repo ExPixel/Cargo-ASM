@@ -21,9 +21,9 @@ pub struct DisasmArgs {
     pub binary_path: Option<PathBuf>,
     pub needle: String,
 
-    pub hide_jumps: bool,
-    pub hide_bytes: bool,
-    pub hide_address: bool,
+    pub show_jumps: bool,
+    pub show_bytes: bool,
+    pub show_addrs: bool,
 
     pub cargo: CargoArgs,
 }
@@ -52,14 +52,16 @@ pub fn parse_cli_args() -> CliCommand {
                         .help("Path of a binary to disassemble and search for symbols in."),
                 )
                 .arg(
-                    Arg::with_name("no-jumps")
-                        .long("no-jumps")
-                        .help("Don't show jumps."),
+                    Arg::with_name("jumps")
+                        .short("J")
+                        .long("jumps")
+                        .help("Jump jump arrows."),
                 )
                 .arg(
-                    Arg::with_name("no-bytes")
-                        .long("no-bytes")
-                        .help("Don't show raw instruction bytes."),
+                    Arg::with_name("bytes")
+                        .short("B")
+                        .long("bytes")
+                        .help("Show raw instruction bytes."),
                 )
                 .arg(
                     Arg::with_name("no-addr")
@@ -125,9 +127,9 @@ pub fn parse_cli_args() -> CliCommand {
             needle,
             cargo,
 
-            hide_address: matches.is_present("no-addr"),
-            hide_jumps: matches.is_present("no-jumps"),
-            hide_bytes: matches.is_present("no-bytes"),
+            show_addrs: !matches.is_present("no-addr"),
+            show_jumps: matches.is_present("jumps"),
+            show_bytes: matches.is_present("bytes"),
         });
     }
 
