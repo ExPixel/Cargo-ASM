@@ -206,7 +206,7 @@ pub trait LineMapper {
 pub struct NoOpLineMapper;
 
 impl LineMapper for NoOpLineMapper {
-    fn map_address_to_line(&self, address: u64) -> anyhow::Result<Option<(&Path, u32)>> {
+    fn map_address_to_line(&self, _address: u64) -> anyhow::Result<Option<(&Path, u32)>> {
         Ok(None)
     }
 }
