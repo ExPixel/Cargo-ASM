@@ -1,12 +1,16 @@
 use super::dwarf::DwarfLineMapper;
 use super::{
     demangle_name, BinaryArch, BinaryBits, BinaryEndian, BinaryInfo, LineMapper, LineMappings,
-    Symbol,
+    NoOpLineMapper, Symbol,
 };
 use goblin::elf::Elf;
 use std::borrow::Cow;
 
-pub fn analyze_elf<'a>(elf: Elf<'a>, binary: &'a [u8]) -> anyhow::Result<BinaryInfo<'a>> {
+pub fn analyze_elf<'a>(
+    elf: Elf<'a>,
+    binary: &'a [u8],
+    load_debug_info: bool,
+) -> anyhow::Result<BinaryInfo<'a>> {
     use goblin::elf::header;
 
     let bits = BinaryBits::from_elf_class(elf.header.e_ident[header::EI_CLASS])
@@ -58,24 +62,29 @@ pub fn analyze_elf<'a>(elf: Elf<'a>, binary: &'a [u8]) -> anyhow::Result<BinaryI
         });
     }
 
-    let dwarf_line_mapper: Box<dyn LineMapper> = if endian == BinaryEndian::Little {
-        let loader = move |section: gimli::SectionId| {
-            get_section_by_name(&elf, binary, section.name())
-                .map(|d| gimli::EndianSlice::new(d, gimli::LittleEndian))
-        };
-        let sup_loader =
-            |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::LittleEndian));
-        Box::new(DwarfLineMapper::new(loader, sup_loader)?)
+    let line_mapper: Box<dyn LineMapper> = if load_debug_info {
+        if endian == BinaryEndian::Little {
+            let loader = move |section: gimli::SectionId| {
+                get_section_by_name(&elf, binary, section.name())
+                    .map(|d| gimli::EndianSlice::new(d, gimli::LittleEndian))
+            };
+            let sup_loader =
+                |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::LittleEndian));
+            Box::new(DwarfLineMapper::new(loader, sup_loader)?)
+        } else {
+            let loader = move |section: gimli::SectionId| {
+                get_section_by_name(&elf, binary, section.name())
+                    .map(|d| gimli::EndianSlice::new(d, gimli::BigEndian))
+            };
+            let sup_loader =
+                |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::BigEndian));
+            Box::new(DwarfLineMapper::new(loader, sup_loader)?)
+        }
     } else {
-        let loader = move |section: gimli::SectionId| {
-            get_section_by_name(&elf, binary, section.name())
-                .map(|d| gimli::EndianSlice::new(d, gimli::BigEndian))
-        };
-        let sup_loader =
-            |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::BigEndian));
-        Box::new(DwarfLineMapper::new(loader, sup_loader)?)
+        Box::new(NoOpLineMapper)
     };
-    let line_mappings = LineMappings::new(dwarf_line_mapper);
+
+    let line_mappings = LineMappings::new(line_mapper);
 
     Ok(BinaryInfo {
         bits,

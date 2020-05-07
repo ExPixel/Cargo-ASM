@@ -96,6 +96,13 @@ pub struct DisasmConfig {
 
     /// If this is true, the number of instructions will be displayed.
     pub display_instr_count: bool,
+
+    /// If this is true, debugging information will be loaded and source code will be shown
+    /// alongside assembly.
+    pub display_source: bool,
+
+    /// If this is true this will load debug information like DWARF.
+    pub load_debug_info: bool,
 }
 
 pub fn disassemble_binary(
@@ -104,7 +111,7 @@ pub fn disassemble_binary(
     output: &mut dyn Write,
     config: &DisasmConfig,
 ) -> anyhow::Result<()> {
-    let binary_info = analyze_binary(binary)?;
+    let binary_info = analyze_binary(binary, config.load_debug_info)?;
 
     let test_symbol = binary_info
         .symbols

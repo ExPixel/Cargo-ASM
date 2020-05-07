@@ -20,11 +20,10 @@ pub struct ListArgs {
 pub struct DisasmArgs {
     pub binary_path: Option<PathBuf>,
     pub needle: String,
-
     pub show_jumps: bool,
     pub show_bytes: bool,
     pub show_addrs: bool,
-
+    pub show_source: bool,
     pub cargo: CargoArgs,
 }
 
@@ -64,7 +63,14 @@ pub fn parse_cli_args() -> CliCommand {
                         .help("Show raw instruction bytes."),
                 )
                 .arg(
+                    Arg::with_name("show-source")
+                        .short("S")
+                        .long("source")
+                        .help("Show source code intermixed with assembly if possible."),
+                )
+                .arg(
                     Arg::with_name("no-addr")
+                        .short("A")
                         .long("no-addr")
                         .help("Don't show the address of instructions."),
                 )
@@ -130,6 +136,7 @@ pub fn parse_cli_args() -> CliCommand {
             show_addrs: !matches.is_present("no-addr"),
             show_jumps: matches.is_present("jumps"),
             show_bytes: matches.is_present("bytes"),
+            show_source: matches.is_present("show-source"),
         });
     }
 

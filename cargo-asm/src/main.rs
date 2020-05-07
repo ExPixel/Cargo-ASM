@@ -38,7 +38,7 @@ fn run_command_list(args: ListArgs) -> anyhow::Result<()> {
     let binary = std::fs::read(&binary_path)
         .with_context(|| format!("failed to read file `{}`", binary_path.to_string_lossy()))?;
 
-    let binary_info = analyze_binary(&binary)?;
+    let binary_info = analyze_binary(&binary, false)?;
     let matcher = disasm::SymbolMatcher::new(&args.needle);
 
     // First we do a measure step:
@@ -90,6 +90,12 @@ fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
     config.sym_output.display_jumps = args.show_jumps;
     config.sym_output.display_patches = true;
     config.sym_output.display_instr = true;
+    config.sym_output.display_source = args.show_source;
+    config.display_source = args.show_source;
+    config.load_debug_info = args.show_source;
+
+    // FIXME implement these. Shows how many bytes of assembly are in the function and the number
+    //       of instructions.
     config.display_length = true;
     config.display_instr_count = true;
 

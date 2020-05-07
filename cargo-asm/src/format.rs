@@ -24,11 +24,13 @@ pub fn write_symbol_and_instructions<'i, 's>(
     };
 
     for (line_idx, instr) in instrs.iter().enumerate() {
-        if let Some(line) = line_mappings
-            .get(instr.address())?
-            .and_then(|(path, line)| line_cache.get_line(path, line))
-        {
-            writeln!(output, "{}", line)?;
+        if config.display_source {
+            if let Some(line) = line_mappings
+                .get(instr.address())?
+                .and_then(|(path, line)| line_cache.get_line(path, line))
+            {
+                writeln!(output, "{}", line)?;
+            }
         }
 
         // Some left padding
@@ -375,4 +377,5 @@ pub struct OutputConfig {
     pub display_bytes: bool,
     pub display_jumps: bool,
     pub display_instr: bool,
+    pub display_source: bool,
 }

@@ -16,9 +16,9 @@ pub struct BinaryInfo<'a> {
     pub line_mappings: LineMappings<'a>,
 }
 
-pub fn analyze_binary(binary: &[u8]) -> anyhow::Result<BinaryInfo> {
+pub fn analyze_binary(binary: &[u8], load_debug_info: bool) -> anyhow::Result<BinaryInfo> {
     match Object::parse(binary)? {
-        Object::Elf(elf) => elf::analyze_elf(elf, binary),
+        Object::Elf(elf) => elf::analyze_elf(elf, binary, load_debug_info),
 
         Object::PE(_pe) => {
             todo!("find_symbols for PE");
@@ -201,6 +201,14 @@ impl<'a> std::fmt::Debug for LineMappings<'a> {
 
 pub trait LineMapper {
     fn map_address_to_line(&self, address: u64) -> anyhow::Result<Option<(&Path, u32)>>;
+}
+
+pub struct NoOpLineMapper;
+
+impl LineMapper for NoOpLineMapper {
+    fn map_address_to_line(&self, address: u64) -> anyhow::Result<Option<(&Path, u32)>> {
+        Ok(None)
+    }
 }
 
 fn rust_impl_fragment(impl_str: &str) -> (/* is_impl */ bool, &'_ str) {
