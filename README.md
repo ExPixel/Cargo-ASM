@@ -11,7 +11,7 @@ Disassemble single symbols in a binary.
 - [ ] Disassemble PE/COFF binaries. **Windows**
 - [ ] Disassemble Mach binaries. **MacOS**
 
-- [ ] Patch call instructions with symbol names.
+- [x] Patch call instructions with symbol names.
 
 - [x] Use DWARF debug information to show Rust code alongside disassembly.
 - [ ] ^ Do the equivalent of that for Windows and MacOS (I'll figure it out)
