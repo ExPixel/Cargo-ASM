@@ -4,6 +4,8 @@ use crate::line_cache::FileLineCache;
 use capstone::Insn;
 use std::io::Write;
 
+// FIXME make this cleaner at some point
+#[allow(clippy::too_many_arguments)]
 pub fn write_symbol_and_instructions<'i, 's>(
     symbol: &Symbol,
     instrs: &[Insn<'i>],

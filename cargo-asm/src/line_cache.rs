@@ -25,7 +25,7 @@ impl FileLineCache {
             unsafe { std::mem::transmute(&self.lines_for_path) };
 
         if let Some(ref lines) = lines_for_path_ref.get(path) {
-            return lines.get_line(line);
+            lines.get_line(line)
         } else {
             let lines = Lines::load(path).unwrap_or_else(|_| Lines::empty());
             self.lines_for_path
@@ -52,8 +52,8 @@ impl Lines {
     }
 
     fn get_line(&self, line_index: u32) -> Option<&str> {
-        if line_index == 0 || line_index as usize - 1 >= self.line_map.len() {
-            return None;
+        if line_index == 0 || line_index as usize > self.line_map.len() {
+            None
         } else {
             let (start, end) = self.line_map[line_index as usize - 1];
             Some(&self.contents[(start as usize)..(end as usize)])

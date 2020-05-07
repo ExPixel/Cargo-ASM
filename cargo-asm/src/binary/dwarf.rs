@@ -27,12 +27,6 @@ impl<R: gimli::Reader> DwarfLineMapper<R> {
         //       if DWARF life mappings are not requested.
         let (units, unit_ranges) = Self::find_compilation_units(&dwarf)?;
 
-        println!(
-            "{} compilation units found with {} ranges",
-            units.len(),
-            unit_ranges.len()
-        );
-
         Ok(DwarfLineMapper {
             dwarf,
             unit_ranges,
@@ -195,7 +189,7 @@ impl<R: gimli::Reader> LazyUnit<R> {
             let address = row.address();
 
             if row.end_sequence() {
-                if seq_start_addr != 0 && lines.len() > 0 {
+                if seq_start_addr != 0 && !lines.is_empty() {
                     // FIXME lines should be sorted by address I think but I'm not sure. If not I
                     //       should sort them here.
                     sequences.push(Sequence {
@@ -228,7 +222,7 @@ impl<R: gimli::Reader> LazyUnit<R> {
 
             lines.push(Line {
                 addr: address,
-                file: file,
+                file,
                 line,
             });
         }
