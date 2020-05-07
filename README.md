@@ -13,7 +13,7 @@ Disassemble single symbols in a binary.
 
 - [ ] Patch call instructions with symbol names.
 
-- [ ] Use DWARF debug information to show Rust code alongside disassembly.
+- [x] Use DWARF debug information to show Rust code alongside disassembly.
 - [ ] ^ Do the equivalent of that for Windows and MacOS (I'll figure it out)
 
 
