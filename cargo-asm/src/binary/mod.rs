@@ -5,18 +5,20 @@ use goblin::Object;
 use once_cell::unsync::OnceCell;
 use std::borrow::Cow;
 use std::ops::Range;
+use std::path::Path;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct BinaryInfo<'a> {
     pub arch: BinaryArch,
     pub bits: BinaryBits,
     pub endian: BinaryEndian,
     pub symbols: Vec<Symbol<'a>>,
+    pub line_mappings: LineMappings<'a>,
 }
 
 pub fn analyze_binary(binary: &[u8]) -> anyhow::Result<BinaryInfo> {
     match Object::parse(binary)? {
-        Object::Elf(elf) => elf::analyze_elf(&elf),
+        Object::Elf(elf) => elf::analyze_elf(elf, binary),
 
         Object::PE(_pe) => {
             todo!("find_symbols for PE");
@@ -173,6 +175,31 @@ impl<'a> Symbol<'a> {
             short_name
         })
     }
+}
+
+pub struct LineMappings<'a> {
+    mapper: Box<dyn 'a + LineMapper>,
+}
+
+impl<'a> LineMappings<'a> {
+    pub fn new(mapper: Box<dyn 'a + LineMapper>) -> Self {
+        LineMappings { mapper }
+    }
+
+    pub fn get(&self, address: u64) -> anyhow::Result<Option<()>> {
+        // FIXME implement this here
+        Ok(self.mapper.map_address_to_line(address)?.map(|_| ()))
+    }
+}
+
+impl<'a> std::fmt::Debug for LineMappings<'a> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "LineMappings {{}}")
+    }
+}
+
+pub trait LineMapper {
+    fn map_address_to_line(&self, address: u64) -> anyhow::Result<Option<(&Path, u32)>>;
 }
 
 fn rust_impl_fragment(impl_str: &str) -> (/* is_impl */ bool, &'_ str) {

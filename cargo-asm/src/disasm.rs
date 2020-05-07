@@ -136,6 +136,7 @@ pub fn disassemble_binary(
         &instrs,
         &jumps,
         &op_patches,
+        &binary_info.line_mappings,
         &config.sym_output,
         output,
     )?;

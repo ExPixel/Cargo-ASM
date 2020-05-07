@@ -1,5 +1,5 @@
 use crate::arch::{InnerJumpTable, OperandPatches};
-use crate::binary::Symbol;
+use crate::binary::{LineMappings, Symbol};
 use capstone::Insn;
 use std::io::Write;
 
@@ -8,6 +8,7 @@ pub fn write_symbol_and_instructions<'i, 's>(
     instrs: &[Insn<'i>],
     jumps: &InnerJumpTable,
     op_patches: &OperandPatches<'s>,
+    line_mappings: &LineMappings<'s>,
     config: &OutputConfig,
     output: &mut dyn Write,
 ) -> anyhow::Result<()> {

@@ -1,8 +1,12 @@
-use super::{demangle_name, BinaryArch, BinaryBits, BinaryEndian, BinaryInfo, Symbol};
+use super::dwarf::DwarfLineMapper;
+use super::{
+    demangle_name, BinaryArch, BinaryBits, BinaryEndian, BinaryInfo, LineMapper, LineMappings,
+    Symbol,
+};
 use goblin::elf::Elf;
 use std::borrow::Cow;
 
-pub fn analyze_elf<'a>(elf: &Elf<'a>) -> anyhow::Result<BinaryInfo<'a>> {
+pub fn analyze_elf<'a>(elf: Elf<'a>, binary: &'a [u8]) -> anyhow::Result<BinaryInfo<'a>> {
     use goblin::elf::header;
 
     let bits = BinaryBits::from_elf_class(elf.header.e_ident[header::EI_CLASS])
@@ -54,10 +58,45 @@ pub fn analyze_elf<'a>(elf: &Elf<'a>) -> anyhow::Result<BinaryInfo<'a>> {
         });
     }
 
+    let dwarf_line_mapper: Box<dyn LineMapper> = if endian == BinaryEndian::Little {
+        let loader = move |section: gimli::SectionId| {
+            get_section_by_name(&elf, binary, section.name())
+                .map(|d| gimli::EndianSlice::new(d, gimli::LittleEndian))
+        };
+        let sup_loader =
+            |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::LittleEndian));
+        Box::new(DwarfLineMapper::new(binary, loader, sup_loader)?)
+    } else {
+        let loader = move |section: gimli::SectionId| {
+            get_section_by_name(&elf, binary, section.name())
+                .map(|d| gimli::EndianSlice::new(d, gimli::BigEndian))
+        };
+        let sup_loader =
+            |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::BigEndian));
+        Box::new(DwarfLineMapper::new(binary, loader, sup_loader)?)
+    };
+    let line_mappings = LineMappings::new(dwarf_line_mapper);
+
     Ok(BinaryInfo {
         bits,
         arch,
         endian,
         symbols,
+        line_mappings,
     })
+}
+
+fn get_section_by_name<'a>(
+    elf: &Elf<'a>,
+    binary: &'a [u8],
+    name: &str,
+) -> anyhow::Result<&'a [u8]> {
+    for section in elf.section_headers.iter() {
+        if let Some(section_name) = elf.shdr_strtab.get(section.sh_name).transpose()? {
+            if section_name == name {
+                return Ok(&binary[section.file_range()]);
+            }
+        }
+    }
+    Ok(&[])
 }

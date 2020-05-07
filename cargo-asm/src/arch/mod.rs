@@ -108,6 +108,7 @@ impl<'s> OperandPatches<'s> {
     }
 
     pub fn get(&self, index: usize) -> Option<&str> {
+        // FIXME make using the short/long name configurable.
         self.patches
             .get(index)
             .and_then(|sym| sym.as_ref().map(|s| s.short_demangled_name()))
