@@ -1,12 +1,13 @@
 pub mod format;
 
 use crate::arch::{analyze_instructions, InnerJumpTable, OperandPatches};
-use crate::binary::{Binary, LineMappings, Symbol};
+use crate::binary::{Binary, FileResolveStrategy, LineMappings, Symbol};
 use crate::errors::WCapstoneError;
 use crate::line_cache::FileLineCache;
 use capstone::prelude::*;
 use capstone::Insn;
 use std::io::Write;
+use std::path::PathBuf;
 
 pub struct SymbolMatcher<'a> {
     original_needle: &'a str,
@@ -101,6 +102,8 @@ pub struct DisasmConfig {
     pub display_jumps: bool,
     pub display_instr: bool,
     pub display_source: bool,
+    pub source_file_resolve: FileResolveStrategy,
+    pub source_base_directory: PathBuf,
     pub load_debug_info: bool,
     pub display_length: bool,
     pub display_instr_count: bool,
@@ -232,7 +235,11 @@ pub struct DisasmContext<'a> {
 
 impl<'a> DisasmContext<'a> {
     pub fn new(config: DisasmConfig, binary: &'a Binary<'a>) -> anyhow::Result<DisasmContext<'a>> {
-        let use_line_mapper = config.display_source;
+        let line_mappings = if config.display_source {
+            binary.line_mapper(&config.source_base_directory, config.source_file_resolve)?
+        } else {
+            crate::binary::no_op_line_mapper()
+        };
 
         Ok(DisasmContext {
             binary,
@@ -240,11 +247,7 @@ impl<'a> DisasmContext<'a> {
             line_cache: FileLineCache::new(),
             jumps: InnerJumpTable::new(),
             op_patches: OperandPatches::new(),
-            line_mappings: if use_line_mapper {
-                binary.line_mapper()?
-            } else {
-                crate::binary::no_op_line_mapper()
-            },
+            line_mappings,
         })
     }
 

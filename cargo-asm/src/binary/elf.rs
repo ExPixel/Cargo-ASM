@@ -1,7 +1,11 @@
 use super::dwarf::DwarfLineMapper;
-use super::{demangle_name, Binary, BinaryArch, BinaryBits, BinaryEndian, LineMapper, Symbol};
+use super::{
+    demangle_name, Binary, BinaryArch, BinaryBits, BinaryEndian, FileResolveStrategy, LineMapper,
+    Symbol,
+};
 use goblin::elf::Elf;
 use std::borrow::Cow;
+use std::path::Path;
 
 pub fn analyze_elf<'a>(
     elf: Elf<'a>,
@@ -73,6 +77,8 @@ pub(super) fn elf_line_mapper<'a>(
     elf: &'a Elf<'a>,
     endian: BinaryEndian,
     data: &'a [u8],
+    base_directory: &Path,
+    resolve_strategy: FileResolveStrategy,
 ) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
     let mapper: Box<dyn LineMapper> = if endian == BinaryEndian::Little {
         let loader = |section: gimli::SectionId| {
@@ -81,7 +87,13 @@ pub(super) fn elf_line_mapper<'a>(
         };
         let sup_loader =
             |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::LittleEndian));
-        Box::new(DwarfLineMapper::new(loader, sup_loader)?)
+
+        Box::new(DwarfLineMapper::new(
+            loader,
+            sup_loader,
+            base_directory,
+            resolve_strategy,
+        )?)
     } else {
         let loader = move |section: gimli::SectionId| {
             get_section_by_name(&elf, data, section.name())
@@ -89,7 +101,13 @@ pub(super) fn elf_line_mapper<'a>(
         };
         let sup_loader =
             |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::BigEndian));
-        Box::new(DwarfLineMapper::new(loader, sup_loader)?)
+
+        Box::new(DwarfLineMapper::new(
+            loader,
+            sup_loader,
+            base_directory,
+            resolve_strategy,
+        )?)
     };
 
     Ok(mapper)

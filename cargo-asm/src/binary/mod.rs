@@ -39,9 +39,19 @@ impl<'a> Binary<'a> {
 
     // FIXME the name on these is kind of consuing...it's called line_mapper but it returns a
     // LineMappings, which contains a LineMapper.
-    pub fn line_mapper(&'a self) -> anyhow::Result<LineMappings<'a>> {
+    pub fn line_mapper(
+        &'a self,
+        base_directory: &Path,
+        resolve_strategy: FileResolveStrategy,
+    ) -> anyhow::Result<LineMappings<'a>> {
         let mapper = match &self.object {
-            Object::Elf(ref elf) => elf::elf_line_mapper(elf, self.endian, &self.data)?,
+            Object::Elf(ref elf) => elf::elf_line_mapper(
+                elf,
+                self.endian,
+                &self.data,
+                base_directory,
+                resolve_strategy,
+            )?,
 
             Object::PE(_pe) => {
                 return Err(CargoAsmError::UnsupportedBinaryFormatOp("PE/COFF", "line map").into())
@@ -203,8 +213,28 @@ impl<'a> Symbol<'a> {
     }
 }
 
-// FIXME This is not longer required it looks like, I can probably just pass the mapper directory.
-//       I could also just merge this with FileLineCache.
+/// Preferred method for a line mapper to resolve paths.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum FileResolveStrategy {
+    PreferRelative,
+    PreferAbsolute,
+}
+
+impl FileResolveStrategy {
+    pub fn other(self) -> FileResolveStrategy {
+        match self {
+            FileResolveStrategy::PreferRelative => FileResolveStrategy::PreferAbsolute,
+            FileResolveStrategy::PreferAbsolute => FileResolveStrategy::PreferRelative,
+        }
+    }
+}
+
+impl Default for FileResolveStrategy {
+    fn default() -> Self {
+        FileResolveStrategy::PreferRelative
+    }
+}
+
 pub struct LineMappings<'a> {
     mapper: Box<dyn 'a + LineMapper>,
 }

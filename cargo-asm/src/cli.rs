@@ -24,6 +24,8 @@ pub struct DisasmArgs {
     pub show_bytes: bool,
     pub show_addrs: bool,
     pub show_source: bool,
+    pub absolute_source_path: bool,
+    pub source_root: Option<PathBuf>,
     pub cargo: CargoArgs,
 }
 
@@ -67,6 +69,20 @@ pub fn parse_cli_args() -> CliCommand {
                         .short("S")
                         .long("source")
                         .help("Show source code intermixed with assembly if possible."),
+                )
+                .arg(
+                    Arg::with_name("source-path-absolute")
+                        .long("source-abs")
+                        .help("Prefer absolute paths from debug information (if they are available) for creating source line maps."),
+                )
+                .arg(
+                    Arg::with_name("source-root")
+                        .long("source-root")
+                        .takes_value(true)
+                        .help(
+                            "The directory used as the base for source line mappings that use a relative path.
+                             By default this is the same directory as the manifest path for Cargo or the
+                             current working directory."),
                 )
                 .arg(
                     Arg::with_name("no-addr")
@@ -126,6 +142,7 @@ pub fn parse_cli_args() -> CliCommand {
     if let Some(matches) = matches.subcommand_matches("disasm") {
         let binary_path = matches.value_of("binary").map(path_arg);
         let needle = matches.value_of("SEARCH").unwrap().to_string();
+        let source_root = matches.value_of("source-root").map(path_arg);
         let cargo = get_cargo_args(&matches);
 
         return CliCommand::Disasm(DisasmArgs {
@@ -137,6 +154,8 @@ pub fn parse_cli_args() -> CliCommand {
             show_jumps: matches.is_present("jumps"),
             show_bytes: matches.is_present("bytes"),
             show_source: matches.is_present("show-source"),
+            absolute_source_path: matches.is_present("source-path-absolute"),
+            source_root,
         });
     }
 

@@ -6,7 +6,7 @@ mod errors;
 mod line_cache;
 
 use anyhow::Context;
-use binary::Binary;
+use binary::{Binary, FileResolveStrategy};
 use cli::{CargoArgs, CliCommand, DisasmArgs, ListArgs};
 use disasm::{DisasmConfig, DisasmContext};
 use errors::CargoAsmError;
@@ -71,12 +71,23 @@ fn run_command_list(args: ListArgs) -> anyhow::Result<()> {
 }
 
 fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
-    let mut stdout = std::io::stdout();
-
-    let binary_path = if let Some(ref path) = args.binary_path {
-        std::borrow::Cow::from(path)
+    let source_root: PathBuf; // derived source root, can be overriden by option.
+    let binary_path;
+    if let Some(ref path) = args.binary_path {
+        source_root = path
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or(std::env::current_dir().context("failed to get current working directory")?);
+        binary_path = std::borrow::Cow::from(path);
     } else {
-        std::borrow::Cow::from(get_cargo_binary_path(&args.cargo)?)
+        source_root = args
+            .cargo
+            .manifest_path
+            .as_ref()
+            .and_then(|p| p.parent())
+            .map(PathBuf::from)
+            .unwrap_or(std::env::current_dir().context("failed to get current working directory")?);
+        binary_path = std::borrow::Cow::from(get_cargo_binary_path(&args.cargo)?);
     };
 
     let binary_data = std::fs::read(&binary_path)
@@ -93,6 +104,12 @@ fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
     config.display_instr = true;
     config.display_source = args.show_source;
     config.load_debug_info = args.show_source;
+    config.source_base_directory = args.source_root.unwrap_or(source_root);
+    config.source_file_resolve = if args.absolute_source_path {
+        FileResolveStrategy::PreferAbsolute
+    } else {
+        FileResolveStrategy::PreferRelative
+    };
 
     // FIXME implement these. Shows how many bytes of assembly are in the function and the number
     //       of instructions.
@@ -105,6 +122,7 @@ fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
         .find(|sym| matcher.matches(&sym.demangled_name))
         .ok_or_else(|| CargoAsmError::NoSymbolMatch(matcher.needle().to_string()))?;
     let mut context = DisasmContext::new(config, &binary)?;
+    let mut stdout = std::io::stdout();
     disasm::disassemble(matched_symbol, &mut context, &mut stdout)?;
 
     Ok(())

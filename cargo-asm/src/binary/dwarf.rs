@@ -1,4 +1,4 @@
-use super::LineMapper;
+use super::{FileResolveStrategy, LineMapper};
 use once_cell::unsync::OnceCell;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -7,16 +7,22 @@ pub type UnitRange = (Range<u64>, usize);
 
 pub struct DwarfLineMapper<R: gimli::Reader> {
     dwarf: gimli::Dwarf<R>,
-
     /// Maps ranges of addresses to compilation units. Each range is associated with an index into
     /// the `units` vector.
     unit_ranges: Vec<UnitRange>,
-
     units: Vec<LazyUnit<R>>,
+
+    base_directory: PathBuf,
+    resolve_strategy: FileResolveStrategy,
 }
 
 impl<R: gimli::Reader> DwarfLineMapper<R> {
-    pub fn new<L, S>(loader: L, sup_loader: S) -> anyhow::Result<Self>
+    pub fn new<L, S>(
+        loader: L,
+        sup_loader: S,
+        base_directory: &Path,
+        resolve_strategy: FileResolveStrategy,
+    ) -> anyhow::Result<Self>
     where
         L: Fn(gimli::SectionId) -> Result<R, anyhow::Error>,
         S: Fn(gimli::SectionId) -> Result<R, anyhow::Error>,
@@ -31,6 +37,8 @@ impl<R: gimli::Reader> DwarfLineMapper<R> {
             dwarf,
             unit_ranges,
             units,
+            base_directory: PathBuf::from(base_directory),
+            resolve_strategy,
         })
     }
 
@@ -62,6 +70,7 @@ impl<R: gimli::Reader> DwarfLineMapper<R> {
             } else {
                 continue;
             };
+
             Self::add_compilation_unit(dwarf, unit, &mut lazy_units, &mut unit_ranges)?;
         }
 
@@ -142,7 +151,12 @@ impl<R: gimli::Reader> DwarfLineMapper<R> {
 impl<R: gimli::Reader> LineMapper for DwarfLineMapper<R> {
     fn map_address_to_line(&self, address: u64) -> anyhow::Result<Option<(&Path, u32)>> {
         if let Some(unit_index) = self.unit_index_for_address(address) {
-            self.units[unit_index].addr2line(&self.dwarf, address)
+            self.units[unit_index].addr2line(
+                &self.dwarf,
+                address,
+                &self.base_directory,
+                self.resolve_strategy,
+            )
         } else {
             Ok(None)
         }
@@ -168,11 +182,22 @@ impl<R: gimli::Reader> LazyUnit<R> {
         }
     }
 
-    fn lines(&self, dwarf: &gimli::Dwarf<R>) -> anyhow::Result<&Lines> {
-        self.lines.get_or_try_init(|| self.load_lines(dwarf))
+    fn lines(
+        &self,
+        dwarf: &gimli::Dwarf<R>,
+        base_directory: &Path,
+        resolve_strategy: FileResolveStrategy,
+    ) -> anyhow::Result<&Lines> {
+        self.lines
+            .get_or_try_init(|| self.load_lines(dwarf, base_directory, resolve_strategy))
     }
 
-    fn load_lines(&self, dwarf: &gimli::Dwarf<R>) -> anyhow::Result<Lines> {
+    fn load_lines(
+        &self,
+        dwarf: &gimli::Dwarf<R>,
+        base_directory: &Path,
+        resolve_strategy: FileResolveStrategy,
+    ) -> anyhow::Result<Lines> {
         let inc_line_program = match self.unit.line_program {
             Some(ref line_prog) => line_prog,
             None => return Ok(Lines::empty()),
@@ -234,7 +259,7 @@ impl<R: gimli::Reader> LazyUnit<R> {
         let mut idx = 0;
         println!();
         while let Some(file) = header.file(idx) {
-            files.push(self.render_file(file, &header, dwarf)?);
+            files.push(self.render_file(file, &header, dwarf, base_directory, resolve_strategy)?);
             idx += 1;
         }
 
@@ -249,20 +274,70 @@ impl<R: gimli::Reader> LazyUnit<R> {
         file: &gimli::FileEntry<R, R::Offset>,
         header: &gimli::LineProgramHeader<R, R::Offset>,
         dwarf: &gimli::Dwarf<R>,
+        base_directory: &Path,
+        resolve_strategy: FileResolveStrategy,
     ) -> anyhow::Result<PathBuf> {
-        let mut path = PathBuf::new();
+        let preferred_path =
+            self.subrender_file(file, header, dwarf, base_directory, resolve_strategy)?;
+
+        if preferred_path.is_file() {
+            Ok(preferred_path)
+        } else {
+            // FIXME reuse the preferred path when the `clear` is stabilized for PathBuf.
+            self.subrender_file(
+                file,
+                header,
+                dwarf,
+                base_directory,
+                resolve_strategy.other(),
+            )
+        }
+    }
+
+    pub fn addr2line(
+        &self,
+        dwarf: &gimli::Dwarf<R>,
+        addr: u64,
+        base_directory: &Path,
+        resolve_strategy: FileResolveStrategy,
+    ) -> anyhow::Result<Option<(&Path, u32)>> {
+        self.lines(dwarf, base_directory, resolve_strategy)
+            .map(|lines| lines.lines_for_addr(addr))
+    }
+
+    /// This should only be called by `render_file`
+    fn subrender_file(
+        &self,
+        file: &gimli::FileEntry<R, R::Offset>,
+        header: &gimli::LineProgramHeader<R, R::Offset>,
+        dwarf: &gimli::Dwarf<R>,
+        base_directory: &Path,
+        resolve_strategy: FileResolveStrategy,
+    ) -> anyhow::Result<PathBuf> {
+        let mut path = if resolve_strategy == FileResolveStrategy::PreferRelative {
+            PathBuf::from(base_directory)
+        } else {
+            PathBuf::new()
+        };
 
         if let Some(ref comp_dir) = self.unit.comp_dir {
-            path.push(comp_dir.to_string_lossy()?.as_ref());
+            let comp_dir = comp_dir.to_string_lossy()?;
+            if resolve_strategy == FileResolveStrategy::PreferAbsolute
+                || Path::new(comp_dir.as_ref()).is_relative()
+            {
+                path.push(comp_dir.as_ref());
+            }
         }
 
         if let Some(directory) = file.directory(header) {
-            path.push(
-                dwarf
-                    .attr_string(&self.unit, directory)?
-                    .to_string_lossy()?
-                    .as_ref(),
-            );
+            let directory_raw = dwarf.attr_string(&self.unit, directory)?;
+            let directory = directory_raw.to_string_lossy()?;
+
+            if resolve_strategy == FileResolveStrategy::PreferAbsolute
+                || Path::new(directory.as_ref()).is_relative()
+            {
+                path.push(directory.as_ref());
+            }
         }
 
         path.push(
@@ -273,14 +348,6 @@ impl<R: gimli::Reader> LazyUnit<R> {
         );
 
         Ok(path)
-    }
-
-    pub fn addr2line(
-        &self,
-        dwarf: &gimli::Dwarf<R>,
-        addr: u64,
-    ) -> anyhow::Result<Option<(&Path, u32)>> {
-        self.lines(dwarf).map(|lines| lines.lines_for_addr(addr))
     }
 }
 
