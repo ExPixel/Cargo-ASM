@@ -1,5 +1,5 @@
 use crate::arch::{analyze_jumps, InnerJumpTable, OperandPatches};
-use crate::binary::{BinaryInfo, LineMappings, Symbol};
+use crate::binary::{Binary, LineMappings, Symbol};
 use crate::errors::WCapstoneError;
 use crate::format;
 use crate::line_cache::FileLineCache;
@@ -106,13 +106,12 @@ pub struct DisasmConfig {
 }
 
 pub fn disassemble<'a>(
-    binary: &'a [u8],
     symbol: &Symbol<'a>,
-    binary_info: &BinaryInfo<'a>,
+    binary: &Binary<'a>,
     config: &DisasmConfig,
     output: &mut dyn Write,
 ) -> anyhow::Result<()> {
-    let symbol_code = &binary[symbol.offset_range()];
+    let symbol_code = &binary.data[symbol.offset_range()];
 
     // FIXME support other ISAs
     let cs = Capstone::new()
@@ -127,7 +126,7 @@ pub fn disassemble<'a>(
         .map_err(WCapstoneError)?;
 
     let (jumps, op_patches) = if config.display_jumps | config.display_patches {
-        analyze_jumps(&binary_info.symbols, binary_info.arch, &cs, &instrs)?
+        analyze_jumps(&binary.symbols, binary.arch, &cs, &instrs)?
     } else {
         (InnerJumpTable::new(), OperandPatches::new())
     };
@@ -138,7 +137,7 @@ pub fn disassemble<'a>(
         line_cache: FileLineCache::new(),
         jumps,
         op_patches,
-        line_mappings: &binary_info.line_mappings,
+        line_mappings: &binary.line_mappings,
     };
 
     write_disasm_output(&instrs, context, output)

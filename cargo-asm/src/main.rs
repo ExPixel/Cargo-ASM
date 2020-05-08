@@ -7,6 +7,7 @@ mod format;
 mod line_cache;
 
 use anyhow::Context;
+use binary::Binary;
 use cli::{CargoArgs, CliCommand, DisasmArgs, ListArgs};
 use disasm::DisasmConfig;
 use errors::CargoAsmError;
@@ -27,24 +28,22 @@ fn run() -> anyhow::Result<()> {
 }
 
 fn run_command_list(args: ListArgs) -> anyhow::Result<()> {
-    use binary::analyze_binary;
-
     let binary_path = if let Some(ref path) = args.binary_path {
         std::borrow::Cow::from(path)
     } else {
         std::borrow::Cow::from(get_cargo_binary_path(&args.cargo)?)
     };
 
-    let binary = std::fs::read(&binary_path)
+    let binary_data = std::fs::read(&binary_path)
         .with_context(|| format!("failed to read file `{}`", binary_path.to_string_lossy()))?;
 
-    let binary_info = analyze_binary(&binary, false)?;
+    let binary = Binary::load(&binary_data, false)?;
     let matcher = disasm::SymbolMatcher::new(&args.needle);
 
     // First we do a measure step:
     let mut max_addr_len = 0;
     let mut max_size_len = 0;
-    for symbol in binary_info
+    for symbol in binary
         .symbols
         .iter()
         .filter(|sym| matcher.matches(&sym.demangled_name))
@@ -54,7 +53,7 @@ fn run_command_list(args: ListArgs) -> anyhow::Result<()> {
     }
 
     // Then we output:
-    for symbol in binary_info
+    for symbol in binary
         .symbols
         .iter()
         .filter(|sym| matcher.matches(&sym.demangled_name))
@@ -81,10 +80,10 @@ fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
         std::borrow::Cow::from(get_cargo_binary_path(&args.cargo)?)
     };
 
-    let binary = std::fs::read(&binary_path)
+    let binary_data = std::fs::read(&binary_path)
         .with_context(|| format!("failed to read file `{}`", binary_path.to_string_lossy()))?;
 
-    let binary_info = binary::analyze_binary(&binary, args.show_source)?;
+    let binary = Binary::load(&binary_data, args.show_source)?;
     let matcher = disasm::SymbolMatcher::new(&args.needle);
 
     let mut config = DisasmConfig::default();
@@ -101,12 +100,12 @@ fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
     config.display_length = true;
     config.display_instr_count = true;
 
-    let matched_symbol = binary_info
+    let matched_symbol = binary
         .symbols
         .iter()
         .find(|sym| matcher.matches(&sym.demangled_name))
         .ok_or_else(|| CargoAsmError::NoSymbolMatch(matcher.needle().to_string()))?;
-    disasm::disassemble(&binary, matched_symbol, &binary_info, &config, &mut stdout)?;
+    disasm::disassemble(matched_symbol, &binary, &config, &mut stdout)?;
 
     Ok(())
 }

@@ -8,7 +8,8 @@ use std::ops::Range;
 use std::path::Path;
 
 #[derive(Debug)]
-pub struct BinaryInfo<'a> {
+pub struct Binary<'a> {
+    pub data: &'a [u8],
     pub arch: BinaryArch,
     pub bits: BinaryBits,
     pub endian: BinaryEndian,
@@ -16,24 +17,26 @@ pub struct BinaryInfo<'a> {
     pub line_mappings: LineMappings<'a>,
 }
 
-pub fn analyze_binary(binary: &[u8], load_debug_info: bool) -> anyhow::Result<BinaryInfo> {
-    match Object::parse(binary)? {
-        Object::Elf(elf) => elf::analyze_elf(elf, binary, load_debug_info),
+impl<'a> Binary<'a> {
+    pub fn load(data: &'a [u8], debug_info: bool) -> anyhow::Result<Binary<'a>> {
+        match Object::parse(data)? {
+            Object::Elf(elf) => elf::analyze_elf(elf, data, debug_info),
 
-        Object::PE(_pe) => {
-            todo!("find_symbols for PE");
-        }
+            Object::PE(_pe) => {
+                todo!("find_symbols for PE");
+            }
 
-        Object::Mach(_mach) => {
-            todo!("find_symbols for Mach");
-        }
+            Object::Mach(_mach) => {
+                todo!("find_symbols for Mach");
+            }
 
-        Object::Archive(_archive) => {
-            todo!("find_symbols for Archive");
-        }
+            Object::Archive(_archive) => {
+                todo!("find_symbols for Archive");
+            }
 
-        Object::Unknown(unknown) => {
-            unimplemented!("unknown binary format {:#x}", unknown);
+            Object::Unknown(unknown) => {
+                unimplemented!("unknown binary format {:#x}", unknown);
+            }
         }
     }
 }
@@ -108,8 +111,6 @@ impl BinaryBits {
         }
     }
 }
-
-impl<'a> BinaryInfo<'a> {}
 
 fn demangle_name(name: &str) -> Cow<'_, str> {
     if let Ok(demangled) = rustc_demangle::try_demangle(&name) {
