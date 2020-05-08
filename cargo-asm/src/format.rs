@@ -1,85 +1,7 @@
-use crate::arch::{InnerJumpTable, OperandPatches};
-use crate::binary::{LineMappings, Symbol};
-use crate::line_cache::FileLineCache;
+use crate::arch::InnerJumpTable;
+use crate::disasm::{DisasmConfig, DisasmContext};
 use capstone::Insn;
 use std::io::Write;
-
-// FIXME make this cleaner at some point
-#[allow(clippy::too_many_arguments)]
-pub fn write_symbol_and_instructions<'i, 's>(
-    symbol: &Symbol,
-    instrs: &[Insn<'i>],
-    jumps: &InnerJumpTable,
-    op_patches: &OperandPatches<'s>,
-    line_mappings: &LineMappings<'s>,
-    line_cache: &mut FileLineCache,
-    config: &OutputConfig,
-    output: &mut dyn Write,
-) -> anyhow::Result<()> {
-    writeln!(output, "{}:", symbol.demangled_name)?;
-
-    let m = measure(&config, instrs, jumps, op_patches);
-    let jump_arrow_pieces = if config.display_jumps {
-        create_jump_arrows_buffer(m.jumps_width, instrs.len(), jumps)
-    } else {
-        Vec::new()
-    };
-
-    for (line_idx, instr) in instrs.iter().enumerate() {
-        if config.display_source {
-            if let Some(line) = line_mappings
-                .get(instr.address())?
-                .and_then(|(path, line)| line_cache.get_line(path, line))
-            {
-                writeln!(output, "{}", line)?;
-            }
-        }
-
-        // Some left padding
-        write!(output, "  ")?;
-
-        if config.display_address {
-            write!(
-                output,
-                "{:0width$x}:    ",
-                instr.address(),
-                width = m.address_width
-            )?;
-        }
-
-        if config.display_bytes {
-            write_hex_string(instr.bytes(), m.bytes_width + 4, output)?;
-        }
-
-        if config.display_jumps {
-            write_arrow_pieces_for_line(output, &jump_arrow_pieces, m.jumps_width, line_idx)?;
-        }
-
-        if config.display_instr {
-            write!(
-                output,
-                "{:<width$}    ",
-                instr.mnemonic().unwrap_or(""),
-                width = m.mnemonic_width
-            )?;
-
-            if let (true, Some(patch)) = (config.display_patches, op_patches.get(line_idx)) {
-                write!(output, "{:<width$}", patch, width = m.operands_width)?;
-            } else {
-                write!(
-                    output,
-                    "{:<width$}",
-                    instr.op_str().unwrap_or(""),
-                    width = m.operands_width
-                )?;
-            }
-        }
-
-        writeln!(output)?;
-    }
-
-    Ok(())
-}
 
 /*
  * Our imaginary arrow pixels are arranged like so:
@@ -113,13 +35,13 @@ const ARROW_RIGHT_BOT_LEFT: u8 = 0b1110;
 const ARROW_TOP_RIGHT_BOT_LEFT: u8 = 0b1111;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum ArrowPiece {
+pub enum ArrowPiece {
     None,
     End(u8),
     Dir(u8),
 }
 
-fn write_arrow_pieces_for_line(
+pub fn write_arrow_pieces_for_line(
     output: &mut dyn Write,
     pieces: &[ArrowPiece],
     width: usize,
@@ -159,7 +81,7 @@ fn write_arrow_pieces_for_line(
     Ok(())
 }
 
-fn create_jump_arrows_buffer(
+pub fn create_jump_arrows_buffer(
     width: usize,
     height: usize,
     jumps: &InnerJumpTable,
@@ -187,7 +109,6 @@ fn create_jump_arrows_buffer(
     pieces
 }
 
-#[allow(clippy::if_same_then_else)]
 fn draw_arrow_to(
     pieces: &mut [ArrowPiece],
     width: usize,
@@ -260,7 +181,11 @@ fn draw_arrow_to(
     push(ArrowPiece::End(ARROW_RIGHT), cur_x, cur_y);
 }
 
-fn write_hex_string(bytes: &[u8], min_size: usize, output: &mut dyn Write) -> anyhow::Result<()> {
+pub fn write_hex_string(
+    bytes: &[u8],
+    min_size: usize,
+    output: &mut dyn Write,
+) -> anyhow::Result<()> {
     const NIBBLES_TOP: [u8; 16] = [
         b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'A', b'B', b'C', b'D', b'E',
         b'F',
@@ -297,18 +222,17 @@ pub struct OutputMeasure {
     pub operands_width: usize,
 }
 
-pub fn measure<'i, 's>(
-    config: &OutputConfig,
-    instrs: &[Insn<'i>],
-    jumps: &InnerJumpTable,
-    op_patches: &OperandPatches<'s>,
+pub fn measure<'i>(
+    instrs: &'i [Insn<'i>],
+    config: &DisasmConfig,
+    context: &DisasmContext,
 ) -> OutputMeasure {
     use std::cmp::max;
 
     let mut measure = OutputMeasure::default();
 
     if config.display_jumps {
-        measure.jumps_width = jumps.max_display_offset() + 1;
+        measure.jumps_width = context.jumps.max_display_offset() + 1;
     }
 
     for (idx, instr) in instrs.iter().enumerate() {
@@ -326,7 +250,7 @@ pub fn measure<'i, 's>(
                 instr.mnemonic().map(|m| m.len()).unwrap_or(0),
             );
 
-            if let (true, Some(patch)) = (config.display_patches, op_patches.get(idx)) {
+            if let (true, Some(patch)) = (config.display_patches, context.op_patches.get(idx)) {
                 measure.operands_width = max(measure.operands_width, patch.len());
             } else {
                 measure.operands_width = max(

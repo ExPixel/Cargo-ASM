@@ -1,9 +1,10 @@
 use crate::arch::{analyze_jumps, InnerJumpTable, OperandPatches};
-use crate::binary::analyze_binary;
+use crate::binary::{BinaryInfo, Symbol};
 use crate::errors::{CargoAsmError, WCapstoneError};
-use crate::format::{write_symbol_and_instructions, OutputConfig};
+use crate::format;
 use crate::line_cache::FileLineCache;
 use capstone::prelude::*;
+use capstone::Insn;
 use std::io::Write;
 
 pub struct SymbolMatcher<'a> {
@@ -89,68 +90,169 @@ impl<'a> SymbolMatcher<'a> {
 
 #[derive(Default)]
 pub struct DisasmConfig {
-    pub sym_output: OutputConfig,
-
-    /// If this is true, the length of the symbol in bytes will be displayed.
-    pub display_length: bool,
-
-    /// If this is true, the number of instructions will be displayed.
-    pub display_instr_count: bool,
-
-    /// If this is true, debugging information will be loaded and source code will be shown
-    /// alongside assembly.
+    pub display_address: bool,
+    pub display_patches: bool,
+    pub display_bytes: bool,
+    pub display_jumps: bool,
+    pub display_instr: bool,
     pub display_source: bool,
-
-    /// If this is true this will load debug information like DWARF.
     pub load_debug_info: bool,
+    pub display_length: bool,
+    pub display_instr_count: bool,
 }
 
-pub fn disassemble_binary(
-    binary: &[u8],
-    matcher: SymbolMatcher,
-    output: &mut dyn Write,
-    config: &DisasmConfig,
-) -> anyhow::Result<()> {
-    let binary_info = analyze_binary(binary, config.load_debug_info)?;
+pub struct Disassembler<'a> {
+    binary: &'a [u8],
+    config: DisasmConfig,
+    binary_info: BinaryInfo<'a>,
+}
 
-    let test_symbol = binary_info
-        .symbols
-        .iter()
-        .find(|sym| matcher.matches(&sym.demangled_name))
-        .ok_or_else(|| CargoAsmError::NoSymbolMatch(matcher.original_needle.to_string()))?;
+impl<'a> Disassembler<'a> {
+    pub fn new(
+        binary: &'a [u8],
+        binary_info: BinaryInfo<'a>,
+        config: DisasmConfig,
+    ) -> Disassembler<'a> {
+        Disassembler {
+            binary,
+            config,
+            binary_info,
+        }
+    }
 
-    let symbol_code = &binary[test_symbol.offset_range()];
+    pub fn disassemble(
+        &mut self,
+        matcher: SymbolMatcher,
+        output: &mut dyn Write,
+    ) -> anyhow::Result<()> {
+        let matched_symbol = self
+            .binary_info
+            .symbols
+            .iter()
+            .find(|sym| matcher.matches(&sym.demangled_name))
+            .ok_or_else(|| CargoAsmError::NoSymbolMatch(matcher.original_needle.to_string()))?;
 
-    let cs = Capstone::new()
-        .x86()
-        .mode(arch::x86::ArchMode::Mode64)
-        .syntax(arch::x86::ArchSyntax::Intel)
-        .detail(true)
-        .build()
-        .map_err(WCapstoneError)?;
-    let instrs = cs
-        .disasm_all(symbol_code, test_symbol.addr)
-        .map_err(WCapstoneError)?;
+        let symbol_code = &self.binary[matched_symbol.offset_range()];
 
-    let (jumps, op_patches) = if config.sym_output.display_jumps | config.sym_output.display_patches
-    {
-        analyze_jumps(&binary_info.symbols, binary_info.arch, &cs, &instrs)?
-    } else {
-        (InnerJumpTable::new(), OperandPatches::new())
-    };
+        // FIXME support other ISAs
+        let cs = Capstone::new()
+            .x86()
+            .mode(arch::x86::ArchMode::Mode64)
+            .syntax(arch::x86::ArchSyntax::Intel)
+            .detail(true)
+            .build()
+            .map_err(WCapstoneError)?;
+        let instrs = cs
+            .disasm_all(symbol_code, matched_symbol.addr)
+            .map_err(WCapstoneError)?;
 
-    let mut file_line_cache = FileLineCache::new();
+        let (jumps, op_patches) = if self.config.display_jumps | self.config.display_patches {
+            analyze_jumps(
+                &self.binary_info.symbols,
+                self.binary_info.arch,
+                &cs,
+                &instrs,
+            )?
+        } else {
+            (InnerJumpTable::new(), OperandPatches::new())
+        };
 
-    write_symbol_and_instructions(
-        &test_symbol,
-        &instrs,
-        &jumps,
-        &op_patches,
-        &binary_info.line_mappings,
-        &mut file_line_cache,
-        &config.sym_output,
-        output,
-    )?;
+        let context = DisasmContext {
+            symbol: matched_symbol,
+            line_cache: FileLineCache::new(),
+            jumps,
+            op_patches,
+        };
 
-    Ok(())
+        self.write_disasm_output(&instrs, context, output)
+    }
+
+    fn write_disasm_output<'r, 'i>(
+        &'r self,
+        instrs: &'i [Insn<'i>],
+        mut context: DisasmContext<'r, 'a>,
+        output: &mut dyn Write,
+    ) -> anyhow::Result<()> {
+        let m = format::measure(instrs, &self.config, &context);
+
+        writeln!(output, "{}:", context.symbol.demangled_name)?;
+
+        let jump_arrow_pieces = if self.config.display_jumps {
+            format::create_jump_arrows_buffer(m.jumps_width, instrs.len(), &context.jumps)
+        } else {
+            Vec::new()
+        };
+
+        for (instr_idx, instr) in instrs.iter().enumerate() {
+            if self.config.display_source {
+                if let Some(line) = self
+                    .binary_info
+                    .line_mappings
+                    .get(instr.address())?
+                    .and_then(|(path, line)| context.line_cache.get_line(path, line))
+                {
+                    writeln!(output, "{}", line)?;
+                }
+            }
+
+            // Left padding
+            write!(output, "  ")?;
+
+            if self.config.display_address {
+                write!(
+                    output,
+                    "{:0width$x}:    ",
+                    instr.address(),
+                    width = m.address_width
+                )?;
+            }
+
+            if self.config.display_bytes {
+                format::write_hex_string(instr.bytes(), m.bytes_width + 4, output)?;
+            }
+
+            if self.config.display_jumps {
+                format::write_arrow_pieces_for_line(
+                    output,
+                    &jump_arrow_pieces,
+                    m.jumps_width,
+                    instr_idx,
+                )?;
+            }
+
+            if self.config.display_instr {
+                write!(
+                    output,
+                    "{:<width$}    ",
+                    instr.mnemonic().unwrap_or(""),
+                    width = m.mnemonic_width
+                )?;
+
+                if let (true, Some(patch)) = (
+                    self.config.display_patches,
+                    context.op_patches.get(instr_idx),
+                ) {
+                    write!(output, "{:<width$}", patch, width = m.operands_width)?;
+                } else {
+                    write!(
+                        output,
+                        "{:<width$}",
+                        instr.op_str().unwrap_or(""),
+                        width = m.operands_width
+                    )?;
+                }
+            }
+
+            writeln!(output)?;
+        }
+
+        Ok(())
+    }
+}
+
+pub struct DisasmContext<'r, 's> {
+    pub symbol: &'r Symbol<'s>,
+    pub line_cache: FileLineCache,
+    pub jumps: InnerJumpTable,
+    pub op_patches: OperandPatches<'s>,
 }
