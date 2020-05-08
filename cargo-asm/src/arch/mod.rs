@@ -42,6 +42,11 @@ impl InnerJumpTable {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.jumps.clear();
+        self.max_display_offset = 0;
+    }
+
     pub fn insert(&mut self, source: usize, target: usize) {
         self.jumps.push(InnerJump {
             source,
@@ -100,6 +105,10 @@ impl<'s> OperandPatches<'s> {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.patches.clear();
+    }
+
     pub fn insert(&mut self, index: usize, symbol: &'s Symbol<'s>) {
         if self.patches.len() < index {
             self.patches.resize_with(index + 1, Default::default);
@@ -131,23 +140,21 @@ fn do_ranges_overlap(a: RangeInclusive<usize>, b: RangeInclusive<usize>) -> bool
     true
 }
 
-pub fn analyze_jumps<'i, 's>(
+pub fn analyze_instructions<'i, 's>(
     symbols: &'s [Symbol<'s>],
     arch: BinaryArch,
     cs: &Capstone,
     instrs: &[Insn<'i>],
-) -> anyhow::Result<(InnerJumpTable, OperandPatches<'s>)> {
-    let mut jumps = match arch {
-        BinaryArch::AMD64 => analyze_jumps_amd64(symbols, cs, instrs),
-        _ => {
-            eprintln!("jump analysis for arch {:?} not yet supported", arch);
-            Ok((InnerJumpTable::new(), OperandPatches::new()))
-        }
-    };
-
-    if let Ok((ref mut j, _)) = jumps {
-        j.sort_and_calc_overlaps();
+    jumps: &mut InnerJumpTable,
+    op_patches: &mut OperandPatches<'s>,
+) -> anyhow::Result<()> {
+    #[allow(clippy::single_match)]
+    match arch {
+        BinaryArch::AMD64 => analyze_instructions_amd64(symbols, cs, instrs, jumps, op_patches)?,
+        _ => { /* NOP */ }
     }
 
-    jumps
+    jumps.sort_and_calc_overlaps();
+
+    Ok(())
 }

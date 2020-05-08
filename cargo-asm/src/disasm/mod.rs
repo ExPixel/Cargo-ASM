@@ -1,7 +1,8 @@
-use crate::arch::{analyze_jumps, InnerJumpTable, OperandPatches};
+pub mod format;
+
+use crate::arch::{analyze_instructions, InnerJumpTable, OperandPatches};
 use crate::binary::{Binary, LineMappings, Symbol};
 use crate::errors::WCapstoneError;
-use crate::format;
 use crate::line_cache::FileLineCache;
 use capstone::prelude::*;
 use capstone::Insn;
@@ -107,11 +108,12 @@ pub struct DisasmConfig {
 
 pub fn disassemble<'a>(
     symbol: &Symbol<'a>,
-    binary: &Binary<'a>,
-    config: &DisasmConfig,
+    context: &mut DisasmContext<'a>,
     output: &mut dyn Write,
 ) -> anyhow::Result<()> {
-    let symbol_code = &binary.data[symbol.offset_range()];
+    context.clear();
+
+    let symbol_code = &context.binary.data[symbol.offset_range()];
 
     // FIXME support other ISAs
     let cs = Capstone::new()
@@ -125,32 +127,27 @@ pub fn disassemble<'a>(
         .disasm_all(symbol_code, symbol.addr)
         .map_err(WCapstoneError)?;
 
-    let (jumps, op_patches) = if config.display_jumps | config.display_patches {
-        analyze_jumps(&binary.symbols, binary.arch, &cs, &instrs)?
-    } else {
-        (InnerJumpTable::new(), OperandPatches::new())
-    };
+    analyze_instructions(
+        &context.binary.symbols,
+        context.binary.arch,
+        &cs,
+        &instrs,
+        &mut context.jumps,
+        &mut context.op_patches,
+    )?;
 
-    let context = DisasmContext {
-        config,
-        symbol,
-        line_cache: FileLineCache::new(),
-        jumps,
-        op_patches,
-        line_mappings: &binary.line_mappings,
-    };
-
-    write_disasm_output(&instrs, context, output)
+    write_disasm_output(symbol, &instrs, context, output)
 }
 
 fn write_disasm_output<'a, 'i>(
+    symbol: &Symbol<'a>,
     instrs: &'i [Insn<'i>],
-    mut context: DisasmContext<'a>,
+    context: &mut DisasmContext<'a>,
     output: &mut dyn Write,
 ) -> anyhow::Result<()> {
     let m = format::measure(instrs, &context.config, &context);
 
-    writeln!(output, "{}:", context.symbol.demangled_name)?;
+    writeln!(output, "{}:", symbol.demangled_name)?;
 
     let jump_arrow_pieces = if context.config.display_jumps {
         format::create_jump_arrows_buffer(m.jumps_width, instrs.len(), &context.jumps)
@@ -160,10 +157,11 @@ fn write_disasm_output<'a, 'i>(
 
     for (instr_idx, instr) in instrs.iter().enumerate() {
         if context.config.display_source {
-            if let Some(line) = context
-                .line_mappings
+            let line_mappings = &context.line_mappings;
+            let line_cache = &mut context.line_cache;
+            if let Some(line) = line_mappings
                 .get(instr.address())?
-                .and_then(|(path, line)| context.line_cache.get_line(path, line))
+                .and_then(|(path, line)| line_cache.get_line(path, line))
             {
                 writeln!(output, "{}", line)?;
             }
@@ -223,11 +221,35 @@ fn write_disasm_output<'a, 'i>(
     Ok(())
 }
 
-pub struct DisasmContext<'s> {
-    pub config: &'s DisasmConfig,
-    pub symbol: &'s Symbol<'s>,
-    pub line_cache: FileLineCache,
-    pub jumps: InnerJumpTable,
-    pub op_patches: OperandPatches<'s>,
-    pub line_mappings: &'s LineMappings<'s>,
+pub struct DisasmContext<'a> {
+    binary: &'a Binary<'a>,
+    line_cache: FileLineCache,
+    jumps: InnerJumpTable,
+    op_patches: OperandPatches<'a>,
+    config: DisasmConfig,
+    line_mappings: LineMappings<'a>,
+}
+
+impl<'a> DisasmContext<'a> {
+    pub fn new(config: DisasmConfig, binary: &'a Binary<'a>) -> anyhow::Result<DisasmContext<'a>> {
+        let use_line_mapper = config.display_source;
+
+        Ok(DisasmContext {
+            binary,
+            config,
+            line_cache: FileLineCache::new(),
+            jumps: InnerJumpTable::new(),
+            op_patches: OperandPatches::new(),
+            line_mappings: if use_line_mapper {
+                binary.line_mapper()?
+            } else {
+                crate::binary::no_op_line_mapper()
+            },
+        })
+    }
+
+    fn clear(&mut self) {
+        self.jumps.clear();
+        self.op_patches.clear();
+    }
 }

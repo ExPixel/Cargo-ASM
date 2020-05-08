@@ -5,15 +5,14 @@ use capstone::arch::x86::X86OperandType;
 use capstone::prelude::*;
 use capstone::Insn;
 
-pub fn analyze_jumps_amd64<'i, 's>(
+pub fn analyze_instructions_amd64<'i, 's>(
     symbols: &'s [Symbol<'s>],
     cs: &Capstone,
     instrs: &[Insn<'i>],
-) -> anyhow::Result<(InnerJumpTable, OperandPatches<'s>)> {
+    jumps: &mut InnerJumpTable,
+    op_patches: &mut OperandPatches<'s>,
+) -> anyhow::Result<()> {
     use capstone::arch::x86::X86InsnGroup;
-
-    let mut op_patches = OperandPatches::new();
-    let mut jumps = InnerJumpTable::new();
 
     for (idx, instr) in instrs.iter().enumerate() {
         let detail = cs.insn_detail(&instr).map_err(WCapstoneError)?;
@@ -45,7 +44,7 @@ pub fn analyze_jumps_amd64<'i, 's>(
         }
     }
 
-    Ok((jumps, op_patches))
+    Ok(())
 }
 
 fn amd64_is_call_opcode(opcode: &[u8]) -> bool {

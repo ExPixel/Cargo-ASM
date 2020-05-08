@@ -3,13 +3,12 @@ mod binary;
 mod cli;
 mod disasm;
 mod errors;
-mod format;
 mod line_cache;
 
 use anyhow::Context;
 use binary::Binary;
 use cli::{CargoArgs, CliCommand, DisasmArgs, ListArgs};
-use disasm::DisasmConfig;
+use disasm::{DisasmConfig, DisasmContext};
 use errors::CargoAsmError;
 use std::path::PathBuf;
 
@@ -48,8 +47,8 @@ fn run_command_list(args: ListArgs) -> anyhow::Result<()> {
         .iter()
         .filter(|sym| matcher.matches(&sym.demangled_name))
     {
-        max_addr_len = std::cmp::max(max_addr_len, format::addr_len(symbol.addr));
-        max_size_len = std::cmp::max(max_size_len, format::off_len(symbol.size));
+        max_addr_len = std::cmp::max(max_addr_len, disasm::format::addr_len(symbol.addr));
+        max_size_len = std::cmp::max(max_size_len, disasm::format::off_len(symbol.size));
     }
 
     // Then we output:
@@ -105,7 +104,8 @@ fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
         .iter()
         .find(|sym| matcher.matches(&sym.demangled_name))
         .ok_or_else(|| CargoAsmError::NoSymbolMatch(matcher.needle().to_string()))?;
-    disasm::disassemble(matched_symbol, &binary, &config, &mut stdout)?;
+    let mut context = DisasmContext::new(config, &binary)?;
+    disasm::disassemble(matched_symbol, &mut context, &mut stdout)?;
 
     Ok(())
 }

@@ -1,6 +1,7 @@
 pub mod dwarf;
 pub mod elf;
 
+use crate::errors::CargoAsmError;
 use goblin::Object;
 use once_cell::unsync::OnceCell;
 use std::borrow::Cow;
@@ -14,7 +15,7 @@ pub struct Binary<'a> {
     pub bits: BinaryBits,
     pub endian: BinaryEndian,
     pub symbols: Vec<Symbol<'a>>,
-    pub line_mappings: LineMappings<'a>,
+    pub object: Object<'a>,
 }
 
 impl<'a> Binary<'a> {
@@ -22,22 +23,46 @@ impl<'a> Binary<'a> {
         match Object::parse(data)? {
             Object::Elf(elf) => elf::analyze_elf(elf, data, debug_info),
 
+            Object::PE(_pe) => Err(CargoAsmError::UnsupportedBinaryFormat("PE/COFF").into()),
+
+            Object::Mach(_mach) => Err(CargoAsmError::UnsupportedBinaryFormat("Macho-O").into()),
+
+            Object::Archive(_archive) => {
+                Err(CargoAsmError::UnsupportedBinaryFormat("Archive").into())
+            }
+
+            Object::Unknown(_unknown) => {
+                Err(CargoAsmError::UnsupportedBinaryFormat("<< UNKNOWN >>").into())
+            }
+        }
+    }
+
+    // FIXME the name on these is kind of consuing...it's called line_mapper but it returns a
+    // LineMappings, which contains a LineMapper.
+    pub fn line_mapper(&'a self) -> anyhow::Result<LineMappings<'a>> {
+        let mapper = match &self.object {
+            Object::Elf(ref elf) => elf::elf_line_mapper(elf, self.endian, &self.data)?,
+
             Object::PE(_pe) => {
-                todo!("find_symbols for PE");
+                return Err(CargoAsmError::UnsupportedBinaryFormatOp("PE/COFF", "line map").into())
             }
 
             Object::Mach(_mach) => {
-                todo!("find_symbols for Mach");
+                return Err(CargoAsmError::UnsupportedBinaryFormatOp("Mach-O", "line map").into())
             }
 
             Object::Archive(_archive) => {
-                todo!("find_symbols for Archive");
+                return Err(CargoAsmError::UnsupportedBinaryFormatOp("Archive", "line map").into())
             }
 
-            Object::Unknown(unknown) => {
-                unimplemented!("unknown binary format {:#x}", unknown);
+            Object::Unknown(_unknown) => {
+                return Err(
+                    CargoAsmError::UnsupportedBinaryFormatOp("<< UNKNOWN >>", "line map").into(),
+                )
             }
-        }
+        };
+
+        Ok(LineMappings::new(mapper))
     }
 }
 
@@ -184,8 +209,12 @@ pub struct LineMappings<'a> {
     mapper: Box<dyn 'a + LineMapper>,
 }
 
+pub fn no_op_line_mapper() -> LineMappings<'static> {
+    LineMappings::new(Box::new(NoOpLineMapper))
+}
+
 impl<'a> LineMappings<'a> {
-    pub fn new(mapper: Box<dyn 'a + LineMapper>) -> Self {
+    fn new(mapper: Box<dyn 'a + LineMapper>) -> Self {
         LineMappings { mapper }
     }
 
@@ -200,11 +229,11 @@ impl<'a> std::fmt::Debug for LineMappings<'a> {
     }
 }
 
-pub trait LineMapper {
+trait LineMapper {
     fn map_address_to_line(&self, address: u64) -> anyhow::Result<Option<(&Path, u32)>>;
 }
 
-pub struct NoOpLineMapper;
+struct NoOpLineMapper;
 
 impl LineMapper for NoOpLineMapper {
     fn map_address_to_line(&self, _address: u64) -> anyhow::Result<Option<(&Path, u32)>> {
