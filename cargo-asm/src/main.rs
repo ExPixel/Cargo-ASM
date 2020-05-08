@@ -101,8 +101,12 @@ fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
     config.display_length = true;
     config.display_instr_count = true;
 
-    let mut disassembler = disasm::Disassembler::new(&binary, binary_info, config);
-    disassembler.disassemble(matcher, &mut stdout)?;
+    let matched_symbol = binary_info
+        .symbols
+        .iter()
+        .find(|sym| matcher.matches(&sym.demangled_name))
+        .ok_or_else(|| CargoAsmError::NoSymbolMatch(matcher.needle().to_string()))?;
+    disasm::disassemble(&binary, matched_symbol, &binary_info, &config, &mut stdout)?;
 
     Ok(())
 }
