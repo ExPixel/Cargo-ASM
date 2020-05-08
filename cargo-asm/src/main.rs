@@ -84,7 +84,7 @@ fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
     let binary = std::fs::read(&binary_path)
         .with_context(|| format!("failed to read file `{}`", binary_path.to_string_lossy()))?;
 
-    let binary_info = binary::analyze_binary(&binary, false)?;
+    let binary_info = binary::analyze_binary(&binary, args.show_source)?;
     let matcher = disasm::SymbolMatcher::new(&args.needle);
 
     let mut config = DisasmConfig::default();
