@@ -42,13 +42,20 @@ fn run_command_list(args: ListArgs) -> anyhow::Result<()> {
     // First we do a measure step:
     let mut max_addr_len = 0;
     let mut max_size_len = 0;
+    let mut matched_any_symbols = false;
     for symbol in binary
         .symbols
         .iter()
         .filter(|sym| matcher.matches(&sym.demangled_name))
     {
+        matched_any_symbols = true;
+
         max_addr_len = std::cmp::max(max_addr_len, disasm::format::addr_len(symbol.addr));
         max_size_len = std::cmp::max(max_size_len, disasm::format::off_len(symbol.size));
+    }
+
+    if !matched_any_symbols {
+        return Err(CargoAsmError::NoSymbolMatch(matcher.needle().to_string()).into());
     }
 
     // Then we output:
