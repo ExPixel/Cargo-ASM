@@ -9,7 +9,8 @@ capstone = { git = "https://github.com/ExPixel/capstone-rs.git", branch = "maste
 gimli = "0.20"
 clap = "2.33"
 anyhow = "1.0"
-goblin = "0.2"
+# goblin = "0.2"
+goblin = { git = "https://github.com/ExPixel/goblin.git", branch = "custom" }
 rustc-demangle = "0.1"
 byteorder = "1.3"
 shellexpand = "2.0"
