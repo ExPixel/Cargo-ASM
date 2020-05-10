@@ -30,11 +30,12 @@ pub fn analyze_elf<'a>(
             continue;
         }
 
-        let sym_name = elf
-            .strtab
-            .get(sym.st_name)
-            .transpose()?
-            .unwrap_or("<< UNKNOWN >>");
+        let sym_name = if let Some(name) = elf.strtab.get(sym.st_name).transpose()? {
+            name
+        } else {
+            continue;
+        };
+
         let sym_name_demangled = demangle_name(sym_name);
 
         let (section_offset, section_addr) = {
