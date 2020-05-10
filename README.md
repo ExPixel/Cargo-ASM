@@ -8,7 +8,8 @@ Disassemble single symbols in a binary.
 - [x] Read Cargo Metadata in order to find binaries automatically.
 
 - [x] Disassemble ELF binaries. **Linux**
-- [ ] Disassemble PE/COFF binaries. **Windows**
+- [x] Disassemble PE/COFF binaries. **Windows GNU**
+- [ ] Disassemble PE/COFF + PDB binaries. **Windows MSVC**
 - [ ] Disassemble Mach binaries. **MacOS**
 
 - [x] Patch call instructions with symbol names.
