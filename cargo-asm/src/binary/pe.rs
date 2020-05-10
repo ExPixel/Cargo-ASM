@@ -45,7 +45,7 @@ pub fn analyze_pe<'a>(
     //     });
     // }
 
-    parse_coff_symbols(&pe, data, &mut symbols)?;
+    get_coff_symbols(&pe, data, &mut symbols)?;
 
     Ok(Binary {
         data,
@@ -57,7 +57,7 @@ pub fn analyze_pe<'a>(
     })
 }
 
-fn parse_coff_symbols<'a>(
+fn get_coff_symbols<'a>(
     pe: &PE<'a>,
     data: &'a [u8],
     symbols: &mut Vec<Symbol<'a>>,
