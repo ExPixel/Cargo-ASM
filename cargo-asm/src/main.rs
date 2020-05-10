@@ -4,6 +4,7 @@ mod cli;
 mod disasm;
 mod errors;
 mod line_cache;
+mod platform;
 
 use anyhow::Context;
 use binary::{Binary, FileResolveStrategy};

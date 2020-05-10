@@ -1,4 +1,5 @@
-use super::{FileResolveStrategy, LineMapper, PathConverter};
+use super::{FileResolveStrategy, LineMapper};
+use crate::platform::PathConverter;
 use once_cell::unsync::OnceCell;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
