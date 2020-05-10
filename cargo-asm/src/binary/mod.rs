@@ -16,7 +16,7 @@ pub struct Binary<'a> {
     pub bits: BinaryBits,
     pub endian: BinaryEndian,
     pub symbols: Vec<Symbol<'a>>,
-    pub object: Object<'a>,
+    pub object: ObjectExt<'a>,
 }
 
 impl<'a> Binary<'a> {
@@ -46,7 +46,7 @@ impl<'a> Binary<'a> {
         resolve_strategy: FileResolveStrategy,
     ) -> anyhow::Result<LineMappings<'a>> {
         let mapper = match &self.object {
-            Object::Elf(ref elf) => elf::elf_line_mapper(
+            ObjectExt::Elf(ref elf) => elf::elf_line_mapper(
                 elf,
                 self.endian,
                 &self.data,
@@ -54,27 +54,19 @@ impl<'a> Binary<'a> {
                 resolve_strategy,
             )?,
 
-            Object::PE(_pe) => {
+            ObjectExt::PE(_pe) => {
                 return Err(CargoAsmError::UnsupportedBinaryFormatOp("PE/COFF", "line map").into())
-            }
-
-            Object::Mach(_mach) => {
-                return Err(CargoAsmError::UnsupportedBinaryFormatOp("Mach-O", "line map").into())
-            }
-
-            Object::Archive(_archive) => {
-                return Err(CargoAsmError::UnsupportedBinaryFormatOp("Archive", "line map").into())
-            }
-
-            Object::Unknown(_unknown) => {
-                return Err(
-                    CargoAsmError::UnsupportedBinaryFormatOp("<< UNKNOWN >>", "line map").into(),
-                )
             }
         };
 
         Ok(LineMappings::new(mapper))
     }
+}
+
+#[derive(Debug)]
+pub enum ObjectExt<'a> {
+    Elf(goblin::elf::Elf<'a>),
+    PE(pe::PEExt<'a>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

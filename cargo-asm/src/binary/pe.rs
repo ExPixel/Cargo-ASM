@@ -1,4 +1,4 @@
-use super::{demangle_name, Binary, BinaryArch, BinaryBits, BinaryEndian, Symbol};
+use super::{demangle_name, Binary, BinaryArch, BinaryBits, BinaryEndian, ObjectExt, Symbol};
 use goblin::pe::PE;
 use std::borrow::Cow;
 
@@ -47,13 +47,18 @@ pub fn analyze_pe<'a>(
 
     get_coff_symbols(&pe, data, &mut symbols)?;
 
+    let pe_ext = PEExt {
+        pe: pe,
+        debug: PEDebug::Dwarf,
+    };
+
     Ok(Binary {
         data,
         bits,
         arch,
         endian,
         symbols,
-        object: goblin::Object::PE(pe),
+        object: ObjectExt::PE(pe_ext),
     })
 }
 
@@ -143,4 +148,15 @@ fn get_coff_symbols<'a>(
     }
 
     Ok(())
+}
+
+#[derive(Debug)]
+pub struct PEExt<'a> {
+    pe: PE<'a>,
+    debug: PEDebug,
+}
+
+#[derive(Debug)]
+pub enum PEDebug {
+    Dwarf,
 }

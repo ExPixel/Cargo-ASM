@@ -1,7 +1,7 @@
 use super::dwarf::DwarfLineMapper;
 use super::{
     demangle_name, Binary, BinaryArch, BinaryBits, BinaryEndian, FileResolveStrategy, LineMapper,
-    Symbol,
+    ObjectExt, Symbol,
 };
 use goblin::elf::Elf;
 use std::borrow::Cow;
@@ -70,7 +70,7 @@ pub fn analyze_elf<'a>(
         arch,
         endian,
         symbols,
-        object: goblin::Object::Elf(elf),
+        object: ObjectExt::Elf(elf),
     })
 }
 
