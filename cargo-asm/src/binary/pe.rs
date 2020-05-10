@@ -68,11 +68,15 @@ fn parse_coff_symbols<'a>(
     let first_symbol_index = symbols.len();
 
     if let Some(symtab) = maybe_symtab {
-        for (sym_index, inline_name, symbol) in symtab.iter() {
-            // These are kind of unreliable, so we check both :p
-            if symtab.aux_function_definition(sym_index).is_none()
-                && !symbol.is_function_definition()
-            {
+        for (_sym_index, inline_name, symbol) in symtab.iter() {
+            if !symbol.is_function_definition() && symbol.typ != 0x20 {
+                continue;
+            }
+
+            // FIXME for now we skip symbols that are sections, but I think the sections can also
+            // actually just contain the function (???) and in this the entire section should be
+            // used. I'm not sure if that is the case though.
+            if symbol.value == 0 {
                 continue;
             }
 
@@ -94,17 +98,25 @@ fn parse_coff_symbols<'a>(
             if sym_name.is_empty() {
                 continue;
             }
-            let sym_name_demangled = demangle_name(sym_name);
 
             let (sym_addr, sym_offset) = if symbol.section_number >= 1 {
                 let section = &pe.sections[symbol.section_number as usize - 1];
-                (
-                    (section.virtual_address + symbol.value) as u64,
-                    (section.pointer_to_raw_data + symbol.value) as usize,
-                )
+
+                if symbol.storage_class == goblin::pe::symbol::IMAGE_SYM_CLASS_STATIC
+                    || symbol.storage_class == goblin::pe::symbol::IMAGE_SYM_CLASS_EXTERNAL
+                    || symbol.storage_class == goblin::pe::symbol::IMAGE_SYM_CLASS_LABEL
+                {
+                    (
+                        (section.virtual_address + symbol.value) as u64,
+                        (section.pointer_to_raw_data + symbol.value) as usize,
+                    )
+                } else {
+                    continue;
+                }
             } else {
                 continue;
             };
+            let sym_name_demangled = demangle_name(sym_name);
 
             symbols.push(Symbol {
                 original_name: Cow::from(sym_name),
