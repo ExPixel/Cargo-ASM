@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 pub trait PathConverter {
-    fn is_relative<'s>(&self, path_str: &str) -> bool;
+    fn is_relative(&self, path_str: &str) -> bool;
     fn convert<'s>(&self, path_str: &'s str) -> Cow<'s, Path>;
 }
 
@@ -51,7 +51,7 @@ impl PathConverter for WindowsToUnixPathConverter {
             return true;
         }
 
-        return false;
+        false
     }
 
     fn convert<'s>(&self, path_str: &'s str) -> Cow<'s, Path> {
@@ -67,11 +67,7 @@ impl PathConverter for WindowsToUnixPathConverter {
 
 impl PathConverter for UnixToWindowsPathConverter {
     fn is_relative(&self, path_str: &str) -> bool {
-        if path_str.starts_with('/') {
-            false
-        } else {
-            true
-        }
+        !path_str.starts_with('/')
     }
 
     fn convert<'s>(&self, path_str: &'s str) -> Cow<'s, Path> {
