@@ -1,6 +1,11 @@
-use super::{demangle_name, Binary, BinaryArch, BinaryBits, BinaryEndian, ObjectExt, Symbol};
+use super::dwarf::DwarfLineMapper;
+use super::{
+    demangle_name, Binary, BinaryArch, BinaryBits, BinaryEndian, FileResolveStrategy, LineMapper,
+    ObjectExt, Symbol,
+};
 use goblin::pe::PE;
 use std::borrow::Cow;
+use std::path::Path;
 
 pub fn analyze_pe<'a>(
     pe: PE<'a>,
@@ -48,7 +53,7 @@ pub fn analyze_pe<'a>(
     get_coff_symbols(&pe, data, &mut symbols)?;
 
     let pe_ext = PEExt {
-        pe: pe,
+        pe,
         debug: PEDebug::Dwarf,
     };
 
@@ -112,7 +117,7 @@ fn get_coff_symbols<'a>(
                     || symbol.storage_class == goblin::pe::symbol::IMAGE_SYM_CLASS_LABEL
                 {
                     (
-                        (section.virtual_address + symbol.value) as u64,
+                        pe.image_base as u64 + (section.virtual_address + symbol.value) as u64,
                         (section.pointer_to_raw_data + symbol.value) as usize,
                     )
                 } else {
@@ -148,6 +153,79 @@ fn get_coff_symbols<'a>(
     }
 
     Ok(())
+}
+
+pub(super) fn pe_line_mapper<'a>(
+    pe: &PEExt<'a>,
+    endian: BinaryEndian,
+    data: &'a [u8],
+    base_directory: &Path,
+    resolve_strategy: FileResolveStrategy,
+) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
+    // FIXME add PDB line mapper
+    pe_dwarf_line_mapper(pe, endian, data, base_directory, resolve_strategy)
+}
+
+fn pe_dwarf_line_mapper<'a>(
+    pe: &PEExt<'a>,
+    endian: BinaryEndian,
+    data: &'a [u8],
+    base_directory: &Path,
+    resolve_strategy: FileResolveStrategy,
+) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
+    let mapper: Box<dyn LineMapper> = if endian == BinaryEndian::Little {
+        let loader = |section: gimli::SectionId| {
+            get_section_by_name(pe, data, section.name())
+                .map(|d| gimli::EndianSlice::new(d, gimli::LittleEndian))
+        };
+        let sup_loader =
+            |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::LittleEndian));
+
+        Box::new(DwarfLineMapper::new(
+            loader,
+            sup_loader,
+            base_directory,
+            resolve_strategy,
+        )?)
+    } else {
+        let loader = move |section: gimli::SectionId| {
+            get_section_by_name(&pe, data, section.name())
+                .map(|d| gimli::EndianSlice::new(d, gimli::BigEndian))
+        };
+        let sup_loader =
+            |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::BigEndian));
+
+        Box::new(DwarfLineMapper::new(
+            loader,
+            sup_loader,
+            base_directory,
+            resolve_strategy,
+        )?)
+    };
+
+    Ok(mapper)
+}
+
+fn get_section_by_name<'a>(
+    pe: &PEExt<'a>,
+    binary: &'a [u8],
+    name: &str,
+) -> anyhow::Result<&'a [u8]> {
+    for section in pe.pe.sections.iter() {
+        if let Ok(section_name) = section.name() {
+            if section_name == name {
+                // FIXME figure out why section.size_of_raw_data is wrong here and why
+                // section.virtual_size works. I suspect it's because of some kind of padding
+                // being added onto the end of sections, but why does that cause gimli
+                // to display an error???
+
+                let section_start = section.pointer_to_raw_data as usize;
+                let section_end = section_start + section.virtual_size as usize;
+                return Ok(&binary[section_start..section_end]);
+            }
+        }
+    }
+    Ok(&[])
 }
 
 #[derive(Debug)]

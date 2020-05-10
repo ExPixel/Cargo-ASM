@@ -1,4 +1,4 @@
-use super::{FileResolveStrategy, LineMapper};
+use super::{FileResolveStrategy, LineMapper, PathConverter};
 use once_cell::unsync::OnceCell;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -149,13 +149,18 @@ impl<R: gimli::Reader> DwarfLineMapper<R> {
 }
 
 impl<R: gimli::Reader> LineMapper for DwarfLineMapper<R> {
-    fn map_address_to_line(&self, address: u64) -> anyhow::Result<Option<(&Path, u32)>> {
+    fn map_address_to_line(
+        &self,
+        address: u64,
+        convert_path: &dyn PathConverter,
+    ) -> anyhow::Result<Option<(&Path, u32)>> {
         if let Some(unit_index) = self.unit_index_for_address(address) {
             self.units[unit_index].addr2line(
                 &self.dwarf,
                 address,
                 &self.base_directory,
                 self.resolve_strategy,
+                convert_path,
             )
         } else {
             Ok(None)
@@ -187,9 +192,11 @@ impl<R: gimli::Reader> LazyUnit<R> {
         dwarf: &gimli::Dwarf<R>,
         base_directory: &Path,
         resolve_strategy: FileResolveStrategy,
+        convert_path: &dyn PathConverter,
     ) -> anyhow::Result<&Lines> {
-        self.lines
-            .get_or_try_init(|| self.load_lines(dwarf, base_directory, resolve_strategy))
+        self.lines.get_or_try_init(|| {
+            self.load_lines(dwarf, base_directory, resolve_strategy, convert_path)
+        })
     }
 
     fn load_lines(
@@ -197,6 +204,7 @@ impl<R: gimli::Reader> LazyUnit<R> {
         dwarf: &gimli::Dwarf<R>,
         base_directory: &Path,
         resolve_strategy: FileResolveStrategy,
+        convert_path: &dyn PathConverter,
     ) -> anyhow::Result<Lines> {
         let inc_line_program = match self.unit.line_program {
             Some(ref line_prog) => line_prog,
@@ -257,9 +265,15 @@ impl<R: gimli::Reader> LazyUnit<R> {
         let mut files = Vec::new();
         let header = inc_line_program.header();
         let mut idx = 0;
-        println!();
         while let Some(file) = header.file(idx) {
-            files.push(self.render_file(file, &header, dwarf, base_directory, resolve_strategy)?);
+            files.push(self.render_file(
+                file,
+                &header,
+                dwarf,
+                base_directory,
+                resolve_strategy,
+                convert_path,
+            )?);
             idx += 1;
         }
 
@@ -276,9 +290,16 @@ impl<R: gimli::Reader> LazyUnit<R> {
         dwarf: &gimli::Dwarf<R>,
         base_directory: &Path,
         resolve_strategy: FileResolveStrategy,
+        convert_path: &dyn PathConverter,
     ) -> anyhow::Result<PathBuf> {
-        let preferred_path =
-            self.subrender_file(file, header, dwarf, base_directory, resolve_strategy)?;
+        let preferred_path = self.subrender_file(
+            file,
+            header,
+            dwarf,
+            base_directory,
+            resolve_strategy,
+            convert_path,
+        )?;
 
         if preferred_path.is_file() {
             Ok(preferred_path)
@@ -290,6 +311,7 @@ impl<R: gimli::Reader> LazyUnit<R> {
                 dwarf,
                 base_directory,
                 resolve_strategy.other(),
+                convert_path,
             )
         }
     }
@@ -300,8 +322,9 @@ impl<R: gimli::Reader> LazyUnit<R> {
         addr: u64,
         base_directory: &Path,
         resolve_strategy: FileResolveStrategy,
+        convert_path: &dyn PathConverter,
     ) -> anyhow::Result<Option<(&Path, u32)>> {
-        self.lines(dwarf, base_directory, resolve_strategy)
+        self.lines(dwarf, base_directory, resolve_strategy, convert_path)
             .map(|lines| lines.lines_for_addr(addr))
     }
 
@@ -313,6 +336,7 @@ impl<R: gimli::Reader> LazyUnit<R> {
         dwarf: &gimli::Dwarf<R>,
         base_directory: &Path,
         resolve_strategy: FileResolveStrategy,
+        convert_path: &dyn PathConverter,
     ) -> anyhow::Result<PathBuf> {
         let mut path = if resolve_strategy == FileResolveStrategy::PreferRelative {
             PathBuf::from(base_directory)
@@ -322,9 +346,11 @@ impl<R: gimli::Reader> LazyUnit<R> {
 
         if let Some(ref comp_dir) = self.unit.comp_dir {
             let comp_dir = comp_dir.to_string_lossy()?;
+
             if resolve_strategy == FileResolveStrategy::PreferAbsolute
-                || Path::new(comp_dir.as_ref()).is_relative()
+                || convert_path.is_relative(comp_dir.as_ref())
             {
+                let comp_dir = convert_path.convert(comp_dir.as_ref());
                 path.push(comp_dir.as_ref());
             }
         }
@@ -334,8 +360,9 @@ impl<R: gimli::Reader> LazyUnit<R> {
             let directory = directory_raw.to_string_lossy()?;
 
             if resolve_strategy == FileResolveStrategy::PreferAbsolute
-                || Path::new(directory.as_ref()).is_relative()
+                || convert_path.is_relative(directory.as_ref())
             {
+                let directory = convert_path.convert(directory.as_ref());
                 path.push(directory.as_ref());
             }
         }

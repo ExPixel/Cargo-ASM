@@ -2,6 +2,7 @@
 pub enum CargoAsmError {
     NoSymbolMatch(String),
     UnsupportedBinaryFormat(/* format */ &'static str),
+    #[allow(dead_code)]
     UnsupportedBinaryFormatOp(
         /* format */ &'static str,
         /* operation */ &'static str,

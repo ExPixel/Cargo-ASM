@@ -7,7 +7,7 @@ use goblin::Object;
 use once_cell::unsync::OnceCell;
 use std::borrow::Cow;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub struct Binary<'a> {
@@ -45,21 +45,44 @@ impl<'a> Binary<'a> {
         base_directory: &Path,
         resolve_strategy: FileResolveStrategy,
     ) -> anyhow::Result<LineMappings<'a>> {
-        let mapper = match &self.object {
-            ObjectExt::Elf(ref elf) => elf::elf_line_mapper(
-                elf,
-                self.endian,
-                &self.data,
-                base_directory,
-                resolve_strategy,
-            )?,
+        let mapper;
+        let convert_path: Box<dyn 'a + PathConverter>;
 
-            ObjectExt::PE(_pe) => {
-                return Err(CargoAsmError::UnsupportedBinaryFormatOp("PE/COFF", "line map").into())
+        match &self.object {
+            ObjectExt::Elf(ref elf) => {
+                mapper = elf::elf_line_mapper(
+                    elf,
+                    self.endian,
+                    &self.data,
+                    base_directory,
+                    resolve_strategy,
+                )?;
+
+                convert_path = if cfg!(target_os = "windows") {
+                    Box::new(UnixToWindowsPathConverter)
+                } else {
+                    Box::new(NativePathConverter)
+                };
+            }
+
+            ObjectExt::PE(ref pe) => {
+                mapper = pe::pe_line_mapper(
+                    pe,
+                    self.endian,
+                    &self.data,
+                    base_directory,
+                    resolve_strategy,
+                )?;
+
+                convert_path = if cfg!(target_os = "windows") {
+                    Box::new(NativePathConverter)
+                } else {
+                    Box::new(WindowsToUnixPathConverter)
+                };
             }
         };
 
-        Ok(LineMappings::new(mapper))
+        Ok(LineMappings::new(mapper, convert_path))
     }
 }
 
@@ -260,19 +283,24 @@ impl Default for FileResolveStrategy {
 
 pub struct LineMappings<'a> {
     mapper: Box<dyn 'a + LineMapper>,
+    convert_path: Box<dyn 'a + PathConverter>,
 }
 
 pub fn no_op_line_mapper() -> LineMappings<'static> {
-    LineMappings::new(Box::new(NoOpLineMapper))
+    LineMappings::new(Box::new(NoOpLineMapper), Box::new(NativePathConverter))
 }
 
 impl<'a> LineMappings<'a> {
-    fn new(mapper: Box<dyn 'a + LineMapper>) -> Self {
-        LineMappings { mapper }
+    fn new(mapper: Box<dyn 'a + LineMapper>, convert_path: Box<dyn 'a + PathConverter>) -> Self {
+        LineMappings {
+            mapper,
+            convert_path,
+        }
     }
 
     pub fn get(&self, address: u64) -> anyhow::Result<Option<(&Path, u32)>> {
-        self.mapper.map_address_to_line(address)
+        self.mapper
+            .map_address_to_line(address, self.convert_path.as_ref())
     }
 }
 
@@ -283,13 +311,21 @@ impl<'a> std::fmt::Debug for LineMappings<'a> {
 }
 
 trait LineMapper {
-    fn map_address_to_line(&self, address: u64) -> anyhow::Result<Option<(&Path, u32)>>;
+    fn map_address_to_line(
+        &self,
+        address: u64,
+        convert_path: &dyn PathConverter,
+    ) -> anyhow::Result<Option<(&Path, u32)>>;
 }
 
 struct NoOpLineMapper;
 
 impl LineMapper for NoOpLineMapper {
-    fn map_address_to_line(&self, _address: u64) -> anyhow::Result<Option<(&Path, u32)>> {
+    fn map_address_to_line(
+        &self,
+        _address: u64,
+        _convert_path: &dyn PathConverter,
+    ) -> anyhow::Result<Option<(&Path, u32)>> {
         Ok(None)
     }
 }
@@ -362,6 +398,91 @@ impl<'s> Iterator for RustSymFragmentIter<'s> {
         let ret = &self.symbol[self.offset..];
         self.offset = self.symbol.len();
         Some(ret)
+    }
+}
+
+pub trait PathConverter {
+    fn is_relative<'s>(&self, path_str: &str) -> bool;
+    fn convert<'s>(&self, path_str: &'s str) -> Cow<'s, Path>;
+}
+
+struct WindowsToUnixPathConverter;
+struct UnixToWindowsPathConverter;
+struct NativePathConverter;
+
+impl PathConverter for NativePathConverter {
+    fn is_relative<'s>(&self, path_str: &str) -> bool {
+        Path::new(path_str).is_relative()
+    }
+
+    fn convert<'s>(&self, path_str: &'s str) -> Cow<'s, Path> {
+        Cow::from(Path::new(path_str))
+    }
+}
+
+impl PathConverter for WindowsToUnixPathConverter {
+    fn is_relative<'s>(&self, path_str: &str) -> bool {
+        let mut chars = path_str.chars();
+
+        // Parsing DriveLetter:/ or DriveLetter:\
+
+        if let Some(ch) = chars.next() {
+            if !ch.is_alphabetic() {
+                return true;
+            }
+        }
+
+        let mut colon = false;
+        while let Some(ch) = chars.next() {
+            if ch == ':' {
+                colon = true;
+                break;
+            } else if !ch.is_alphabetic() {
+                return true;
+            }
+        }
+
+        if !colon {
+            return true;
+        }
+
+        let slash = chars.next();
+        if slash != Some('/') && slash != Some('\\') {
+            return true;
+        }
+
+        return false;
+    }
+
+    fn convert<'s>(&self, path_str: &'s str) -> Cow<'s, Path> {
+        // FIXME Implement converting windows paths to unix paths.
+        //       Should probably replace the drive with the root directory.
+        if path_str.contains('\\') {
+            Cow::from(PathBuf::from(path_str.replace('\\', "/")))
+        } else {
+            Cow::from(Path::new(path_str))
+        }
+    }
+}
+
+impl PathConverter for UnixToWindowsPathConverter {
+    fn is_relative(&self, path_str: &str) -> bool {
+        if path_str.starts_with('/') {
+            false
+        } else {
+            true
+        }
+    }
+
+    fn convert<'s>(&self, path_str: &'s str) -> Cow<'s, Path> {
+        // FIXME Implement converting unix paths to windows paths.
+        //       Should probably replace the root directory with the drive of the
+        //       base directory.
+        if path_str.contains('/') {
+            Cow::from(PathBuf::from(path_str.replace('/', "\\")))
+        } else {
+            Cow::from(Path::new(path_str))
+        }
     }
 }
 
