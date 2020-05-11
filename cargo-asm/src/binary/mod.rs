@@ -136,30 +136,32 @@ impl BinaryArch {
     }
 
     pub fn from_coff_machine(machine: u16, bits: BinaryBits) -> Option<Self> {
+        use goblin::pe::header;
+
         match machine {
-            COFF_MACHINE_UNKNOWN => None,
-            COFF_MACHINE_I386 => Some(BinaryArch::X86),
-            COFF_MACHINE_AMD64 => Some(BinaryArch::AMD64),
-            COFF_MACHINE_MIPS16
-            | COFF_MACHINE_MIPSFPU
-            | COFF_MACHINE_MIPSFPU16
-            | COFF_MACHINE_R4000 => Some(BinaryArch::MIPS),
-            COFF_MACHINE_POWERPC | COFF_MACHINE_POWERPCFP => {
+            header::COFF_MACHINE_UNKNOWN => None,
+            header::COFF_MACHINE_X86 => Some(BinaryArch::X86),
+            header::COFF_MACHINE_X86_64 => Some(BinaryArch::AMD64),
+            header::COFF_MACHINE_MIPS16
+            | header::COFF_MACHINE_MIPSFPU
+            | header::COFF_MACHINE_MIPSFPU16
+            | header::COFF_MACHINE_R4000 => Some(BinaryArch::MIPS),
+            header::COFF_MACHINE_POWERPC | header::COFF_MACHINE_POWERPCFP => {
                 if bits == BinaryBits::Bits32 {
                     Some(BinaryArch::PowerPC)
                 } else {
                     Some(BinaryArch::PowerPC64)
                 }
             }
-            COFF_MACHINE_ARM => Some(BinaryArch::ARM),
-            COFF_MACHINE_ARM64 => Some(BinaryArch::AArch64),
-            COFF_MACHINE_RISCV32 | COFF_MACHINE_RISCV64 | COFF_MACHINE_RISCV128 => {
-                Some(BinaryArch::RiscV)
-            }
+            header::COFF_MACHINE_ARM => Some(BinaryArch::ARM),
+            header::COFF_MACHINE_ARM64 => Some(BinaryArch::AArch64),
+            header::COFF_MACHINE_RISCV32
+            | header::COFF_MACHINE_RISCV64
+            | header::COFF_MACHINE_RISCV128 => Some(BinaryArch::RiscV),
 
             // FIXME this is wrong, I should introduce something separate for THUMB mode. I will
             // probably forget for a while.
-            COFF_MACHINE_THUMB => Some(BinaryArch::ARM),
+            header::COFF_MACHINE_THUMB => Some(BinaryArch::ARM),
 
             _ => Some(BinaryArch::Unknown),
         }
@@ -391,37 +393,3 @@ impl<'s> Iterator for RustSymFragmentIter<'s> {
         Some(ret)
     }
 }
-
-/// The contents of this field are assumed to be applicable
-/// to any machine type.
-const COFF_MACHINE_UNKNOWN: u16 = 0x0;
-/// x64
-const COFF_MACHINE_AMD64: u16 = 0x8664;
-/// ARM Little Endian
-const COFF_MACHINE_ARM: u16 = 0x1C0;
-/// ARM64 Little Endian
-const COFF_MACHINE_ARM64: u16 = 0xaa64;
-// /// ARM Thumb-2 Little Endian
-// const COFF_MACHINE_ARMNT: u16 = 0x1c4;
-/// Intel 386 or later processors and compatible processors
-const COFF_MACHINE_I386: u16 = 0x14c;
-/// MIPS16
-const COFF_MACHINE_MIPS16: u16 = 0x266;
-/// MIPS with FPU
-const COFF_MACHINE_MIPSFPU: u16 = 0x366;
-/// MIPS16 with FPU
-const COFF_MACHINE_MIPSFPU16: u16 = 0x466;
-/// Power PC little endian
-const COFF_MACHINE_POWERPC: u16 = 0x1f0;
-/// Power PC with floating point support
-const COFF_MACHINE_POWERPCFP: u16 = 0x1f1;
-/// MIPS little endian
-const COFF_MACHINE_R4000: u16 = 0x166;
-/// RISC-V 32-bit address space
-const COFF_MACHINE_RISCV32: u16 = 0x5032;
-/// RISC-V 64-bit address space
-const COFF_MACHINE_RISCV64: u16 = 0x5064;
-/// RISC-V 128-bit address space
-const COFF_MACHINE_RISCV128: u16 = 0x5128;
-/// Thumb (16bit ARM)
-const COFF_MACHINE_THUMB: u16 = 0x1c2;
