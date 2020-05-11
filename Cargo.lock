@@ -76,7 +76,7 @@ checksum = "08c48aae112d48ed9f069b33538ea9e3e90aa263cfa3d1c24309612b1f7472de"
 [[package]]
 name = "capstone"
 version = "0.7.0"
-source = "git+https://github.com/ExPixel/capstone-rs.git#14f0a448d35972ee5c26d4a4834e0ebd8be6bd41"
+source = "git+https://github.com/ExPixel/capstone-rs.git#5a23f1990401a52c17c35b40cc18fa317bf4340e"
 dependencies = [
  "capstone-sys",
  "libc",
@@ -85,7 +85,7 @@ dependencies = [
 [[package]]
 name = "capstone-sys"
 version = "0.11.0"
-source = "git+https://github.com/ExPixel/capstone-rs.git#14f0a448d35972ee5c26d4a4834e0ebd8be6bd41"
+source = "git+https://github.com/ExPixel/capstone-rs.git#5a23f1990401a52c17c35b40cc18fa317bf4340e"
 dependencies = [
  "cc",
  "libc",
