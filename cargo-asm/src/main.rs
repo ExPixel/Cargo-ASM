@@ -37,7 +37,7 @@ fn run_command_list(args: ListArgs) -> anyhow::Result<()> {
     let binary_data = std::fs::read(&binary_path)
         .with_context(|| format!("failed to read file `{}`", binary_path.to_string_lossy()))?;
 
-    let binary = Binary::load(&binary_data, false)?;
+    let binary = Binary::load(&binary_data, &binary_path, false)?;
     let matcher = disasm::SymbolMatcher::new(&args.needle);
 
     // First we do a measure step:
@@ -101,7 +101,7 @@ fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
     let binary_data = std::fs::read(&binary_path)
         .with_context(|| format!("failed to read file `{}`", binary_path.to_string_lossy()))?;
 
-    let binary = Binary::load(&binary_data, args.show_source)?;
+    let binary = Binary::load(&binary_data, &binary_path, args.show_source)?;
     let matcher = disasm::SymbolMatcher::new(&args.needle);
 
     let mut config = DisasmConfig::default();

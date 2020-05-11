@@ -3,13 +3,15 @@ use super::{
     demangle_name, Binary, BinaryArch, BinaryBits, BinaryEndian, FileResolveStrategy, LineMapper,
     ObjectExt, Symbol,
 };
+use anyhow::Context as _;
 use goblin::pe::PE;
 use std::borrow::Cow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub fn analyze_pe<'a>(
     pe: PE<'a>,
     data: &'a [u8],
+    binary_path: &Path,
     _load_debug_info: bool,
 ) -> anyhow::Result<Binary<'a>> {
     let endian = BinaryEndian::Little;
@@ -52,9 +54,34 @@ pub fn analyze_pe<'a>(
 
     get_coff_symbols(&pe, data, &mut symbols)?;
 
-    let pe_ext = PEExt {
-        pe,
-        debug: PEDebug::Dwarf,
+    let debug_data_pdb = pe
+        .debug_data
+        .as_ref()
+        .and_then(|data| data.codeview_pdb70_debug_info.as_ref())
+        .and_then(|codeview| std::str::from_utf8(codeview.filename).ok())
+        .map(|pdb_str| PathBuf::from(pdb_str));
+
+    // FIXME allow passing PDB file as an argument somehow which would override this:
+    let pdb_path = if Some(true) == debug_data_pdb.as_ref().map(|p| p.exists()) {
+        debug_data_pdb
+    } else {
+        find_pdb_path(binary_path)
+    };
+
+    let pe_ext = if let Some(pdb_path) = pdb_path {
+        let pdb_data = std::fs::read(&pdb_path)
+            .with_context(|| format!("failed to read file `{}`", pdb_path.display()))?;
+        let pdb = pdb::Pdb::parse(pdb_data);
+
+        PEExt {
+            pe,
+            debug: PEDebug::Pdb(pdb),
+        }
+    } else {
+        PEExt {
+            pe,
+            debug: PEDebug::Dwarf,
+        }
     };
 
     Ok(Binary {
@@ -65,6 +92,41 @@ pub fn analyze_pe<'a>(
         symbols,
         object: ObjectExt::PE(pe_ext),
     })
+}
+
+/// Attempts to find the PDB file for the binary.
+/// This will just search for a file in the same directory as binary_path with the same filename
+/// but with the .pdb extension.
+fn find_pdb_path(binary_path: &Path) -> Option<PathBuf> {
+    let binary_stem = binary_path.file_stem()?;
+
+    if let Some(directory) = binary_path.parent() {
+        for maybe_pdb in directory.read_dir().ok()? {
+            let maybe_pdb = if let Ok(maybe_pdb) = maybe_pdb {
+                maybe_pdb
+            } else {
+                continue;
+            };
+
+            // FIXME ther might (should) be a better wayto do this :|
+            if Path::new(&maybe_pdb.file_name())
+                .file_stem()
+                .map(|s| s == binary_stem)
+                .unwrap_or(false)
+                && Path::new(&maybe_pdb.file_name())
+                    .extension()
+                    .map(|s| s == "pdb")
+                    .unwrap_or(false)
+            {
+                let maybe_pdb_path = maybe_pdb.path();
+                if maybe_pdb_path.is_file() {
+                    return Some(maybe_pdb_path);
+                }
+            }
+        }
+    }
+
+    None
 }
 
 fn get_coff_symbols<'a>(
@@ -162,8 +224,22 @@ pub(super) fn pe_line_mapper<'a>(
     base_directory: &Path,
     resolve_strategy: FileResolveStrategy,
 ) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
-    // FIXME add PDB line mapper
-    pe_dwarf_line_mapper(pe, endian, data, base_directory, resolve_strategy)
+    match &pe.debug {
+        PEDebug::Dwarf => pe_dwarf_line_mapper(pe, endian, data, base_directory, resolve_strategy),
+        PEDebug::Pdb(ref _pdb) => {
+            pe_pdb_line_mapper(pe, endian, data, base_directory, resolve_strategy)
+        }
+    }
+}
+
+fn pe_pdb_line_mapper<'a>(
+    _pe: &PEExt<'a>,
+    _endian: BinaryEndian,
+    _data: &'a [u8],
+    _base_directory: &Path,
+    _resolve_strategy: FileResolveStrategy,
+) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
+    anyhow::bail!("not yet implemented")
 }
 
 fn pe_dwarf_line_mapper<'a>(
@@ -231,10 +307,11 @@ fn get_section_by_name<'a>(
 #[derive(Debug)]
 pub struct PEExt<'a> {
     pe: PE<'a>,
-    debug: PEDebug,
+    debug: PEDebug<'a>,
 }
 
 #[derive(Debug)]
-pub enum PEDebug {
+pub enum PEDebug<'a> {
     Dwarf,
+    Pdb(pdb::Pdb<'a>),
 }

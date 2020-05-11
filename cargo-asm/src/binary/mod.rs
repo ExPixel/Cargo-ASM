@@ -21,11 +21,15 @@ pub struct Binary<'a> {
 }
 
 impl<'a> Binary<'a> {
-    pub fn load(data: &'a [u8], debug_info: bool) -> anyhow::Result<Binary<'a>> {
+    pub fn load(
+        data: &'a [u8],
+        binary_path: &Path,
+        debug_info: bool,
+    ) -> anyhow::Result<Binary<'a>> {
         match Object::parse(data)? {
             Object::Elf(elf) => elf::analyze_elf(elf, data, debug_info),
 
-            Object::PE(pe) => pe::analyze_pe(pe, data, debug_info),
+            Object::PE(pe) => pe::analyze_pe(pe, data, binary_path, debug_info),
 
             Object::Mach(_mach) => Err(CargoAsmError::UnsupportedBinaryFormat("Macho-O").into()),
 
