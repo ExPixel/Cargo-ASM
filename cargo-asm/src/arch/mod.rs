@@ -110,7 +110,7 @@ impl<'s> OperandPatches<'s> {
     }
 
     pub fn insert(&mut self, index: usize, symbol: &'s Symbol<'s>) {
-        if self.patches.len() < index {
+        if self.patches.len() <= index {
             self.patches.resize_with(index + 1, Default::default);
         }
         self.patches[index] = Some(symbol);
