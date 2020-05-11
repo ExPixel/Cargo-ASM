@@ -141,7 +141,7 @@ fn get_cargo_binary_path(cargo_args: &CargoArgs) -> anyhow::Result<PathBuf> {
 
     let mut cmd = cargo_metadata::MetadataCommand::new();
     cmd.no_deps();
-    cmd.other_options(&["--offline".to_string()]);
+    cmd.other_options(&["--offline".to_string()] as &[String]);
 
     if let Some(ref manifest_path) = cargo_args.manifest_path {
         cmd.manifest_path(manifest_path);
