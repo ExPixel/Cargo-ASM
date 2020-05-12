@@ -68,14 +68,15 @@ pub fn analyze_pe<'a>(
         find_pdb_path(binary_path)
     };
 
-    let pe_ext = if let Some(pdb_path) = pdb_path {
-        let pdb_data = std::fs::read(&pdb_path)
+    let pe_ext = if let Some(ref pdb_path) = pdb_path {
+        let pdb_data = std::fs::read(pdb_path)
             .with_context(|| format!("failed to read file `{}`", pdb_path.display()))?;
-        let pdb = pdb::Pdb::parse(pdb_data);
+        let pdb_vec = PDBVecSource::new(pdb_data);
+        let pdb = pdb::PDB::open(pdb_vec)?;
 
         PEExt {
             pe,
-            debug: PEDebug::Pdb(pdb),
+            debug: PEDebug::PDB(pdb),
         }
     } else {
         PEExt {
@@ -226,7 +227,7 @@ pub(super) fn pe_line_mapper<'a>(
 ) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
     match &pe.debug {
         PEDebug::Dwarf => pe_dwarf_line_mapper(pe, endian, data, base_directory, resolve_strategy),
-        PEDebug::Pdb(ref _pdb) => {
+        PEDebug::PDB(ref _pdb) => {
             pe_pdb_line_mapper(pe, endian, data, base_directory, resolve_strategy)
         }
     }
@@ -313,5 +314,34 @@ pub struct PEExt<'a> {
 #[derive(Debug)]
 pub enum PEDebug<'a> {
     Dwarf,
-    Pdb(pdb::Pdb<'a>),
+    PDB(pdb::PDB<'a, PDBVecSource<'a>>),
+}
+
+pub struct PDBVecSource<'a> {
+    data: Vec<u8>,
+    _phantom: std::marker::PhantomData<&'a ()>,
+}
+
+impl<'a> std::fmt::Debug for PDBVecSource<'a> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!();
+    }
+}
+
+impl<'a> PDBVecSource<'a> {
+    fn new(data: Vec<u8>) -> PDBVecSource<'a> {
+        PDBVecSource {
+            data,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<'a> pdb::Source<'a> for PDBVecSource<'a> {
+    fn view(
+        &mut self,
+        slices: &[pdb::SourceSlice],
+    ) -> Result<Box<dyn pdb::SourceView<'a>>, std::io::Error> {
+        todo!();
+    }
 }
