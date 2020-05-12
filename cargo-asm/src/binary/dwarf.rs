@@ -151,7 +151,7 @@ impl<R: gimli::Reader> DwarfLineMapper<R> {
 
 impl<R: gimli::Reader> LineMapper for DwarfLineMapper<R> {
     fn map_address_to_line(
-        &self,
+        &mut self,
         address: u64,
         convert_path: &dyn PathConverter,
     ) -> anyhow::Result<Option<(&Path, u32)>> {

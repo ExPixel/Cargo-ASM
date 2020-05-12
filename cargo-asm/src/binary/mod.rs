@@ -1,18 +1,73 @@
+mod arena;
 pub mod dwarf;
 pub mod elf;
+pub mod pdb_lines;
 pub mod pe;
 
 use crate::errors::CargoAsmError;
 use crate::platform::{path_converter_from, NativePathConverter, PathConverter, Platform};
+use arena::StringArena;
 use goblin::Object;
 use once_cell::unsync::OnceCell;
 use std::borrow::Cow;
+use std::cell::{RefCell, RefMut};
 use std::ops::Range;
 use std::path::Path;
 
+pub type FilePDB<'a> = pdb::PDB<'a, std::fs::File>;
+
+#[derive(Debug)]
+pub struct BinaryData {
+    data: Box<[u8]>,
+    syms: RefCell<StringArena<'static>>,
+    pdb: RefCell<Option<FilePDB<'static>>>,
+}
+
+impl BinaryData {
+    pub fn load(data: Vec<u8>) -> BinaryData {
+        BinaryData {
+            data: data.into_boxed_slice(),
+            syms: RefCell::new(StringArena::new()),
+            pdb: RefCell::new(None),
+        }
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
+    // pub fn data_mut(&mut self) -> &mut [u8] {
+    //     &mut self.data
+    // }
+
+    fn sym_arena_mut<'a>(&'a self) -> RefMut<StringArena<'a>> {
+        // Casting away lifetimes :)
+        // I don't move any of the data in this struct if that makes you feel better.
+        unsafe {
+            std::mem::transmute::<RefMut<StringArena<'_>>, RefMut<StringArena<'a>>>(
+                self.syms.borrow_mut(),
+            )
+        }
+    }
+
+    fn pdb_mut<'a>(&'a self) -> RefMut<'a, Option<FilePDB<'a>>> {
+        // Casting away lifetimes :)
+        // I don't move any of the data in this struct if that makes you feel better.
+        unsafe {
+            std::mem::transmute::<RefMut<'_, Option<FilePDB<'_>>>, RefMut<'a, Option<FilePDB<'a>>>>(
+                self.pdb.borrow_mut(),
+            )
+        }
+    }
+
+    fn set_pdb(&self, pdb: FilePDB<'static>) {
+        *self.pdb.borrow_mut() = Some(pdb);
+    }
+}
+
 #[derive(Debug)]
 pub struct Binary<'a> {
-    pub data: &'a [u8],
+    pub data: &'a BinaryData,
     pub arch: BinaryArch,
     pub bits: BinaryBits,
     pub endian: BinaryEndian,
@@ -22,11 +77,11 @@ pub struct Binary<'a> {
 
 impl<'a> Binary<'a> {
     pub fn load(
-        data: &'a [u8],
+        data: &'a BinaryData,
         binary_path: &Path,
         debug_info: bool,
     ) -> anyhow::Result<Binary<'a>> {
-        match Object::parse(data)? {
+        match Object::parse(data.data())? {
             Object::Elf(elf) => elf::analyze_elf(elf, data, debug_info),
 
             Object::PE(pe) => pe::analyze_pe(pe, data, binary_path, debug_info),
@@ -58,7 +113,7 @@ impl<'a> Binary<'a> {
                 mapper = elf::elf_line_mapper(
                     elf,
                     self.endian,
-                    &self.data,
+                    &self.data.data(),
                     base_directory,
                     resolve_strategy,
                 )?;
@@ -68,8 +123,9 @@ impl<'a> Binary<'a> {
             ObjectExt::PE(ref pe) => {
                 mapper = pe::pe_line_mapper(
                     pe,
+                    self.data.pdb_mut(),
                     self.endian,
-                    &self.data,
+                    &self.data.data(),
                     base_directory,
                     resolve_strategy,
                 )?;
@@ -78,6 +134,10 @@ impl<'a> Binary<'a> {
         };
 
         Ok(LineMappings::new(mapper, convert_path))
+    }
+
+    pub fn data(&self) -> &[u8] {
+        self.data.data()
     }
 }
 
@@ -295,7 +355,7 @@ impl<'a> LineMappings<'a> {
         }
     }
 
-    pub fn get(&self, address: u64) -> anyhow::Result<Option<(&Path, u32)>> {
+    pub fn get(&mut self, address: u64) -> anyhow::Result<Option<(&Path, u32)>> {
         self.mapper
             .map_address_to_line(address, self.convert_path.as_ref())
     }
@@ -309,7 +369,7 @@ impl<'a> std::fmt::Debug for LineMappings<'a> {
 
 trait LineMapper {
     fn map_address_to_line(
-        &self,
+        &mut self,
         address: u64,
         convert_path: &dyn PathConverter,
     ) -> anyhow::Result<Option<(&Path, u32)>>;
@@ -319,7 +379,7 @@ struct NoOpLineMapper;
 
 impl LineMapper for NoOpLineMapper {
     fn map_address_to_line(
-        &self,
+        &mut self,
         _address: u64,
         _convert_path: &dyn PathConverter,
     ) -> anyhow::Result<Option<(&Path, u32)>> {

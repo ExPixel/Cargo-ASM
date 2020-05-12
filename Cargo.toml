@@ -1,5 +1,4 @@
 [workspace]
 members = [
-    "cargo-asm",
-    "pdb",
+    "cargo-asm"
 ]

@@ -7,7 +7,7 @@ mod line_cache;
 mod platform;
 
 use anyhow::Context;
-use binary::{Binary, FileResolveStrategy};
+use binary::{Binary, BinaryData, FileResolveStrategy};
 use cli::{CargoArgs, CliCommand, DisasmArgs, ListArgs};
 use disasm::{DisasmConfig, DisasmContext};
 use errors::CargoAsmError;
@@ -34,9 +34,9 @@ fn run_command_list(args: ListArgs) -> anyhow::Result<()> {
         std::borrow::Cow::from(get_cargo_binary_path(&args.cargo)?)
     };
 
-    let binary_data = std::fs::read(&binary_path)
+    let binary_bytes = std::fs::read(&binary_path)
         .with_context(|| format!("failed to read file `{}`", binary_path.to_string_lossy()))?;
-
+    let binary_data = BinaryData::load(binary_bytes);
     let binary = Binary::load(&binary_data, &binary_path, false)?;
     let matcher = disasm::SymbolMatcher::new(&args.needle);
 
@@ -98,10 +98,10 @@ fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
         binary_path = std::borrow::Cow::from(get_cargo_binary_path(&args.cargo)?);
     };
 
-    let binary_data = std::fs::read(&binary_path)
+    let binary_bytes = std::fs::read(&binary_path)
         .with_context(|| format!("failed to read file `{}`", binary_path.to_string_lossy()))?;
-
-    let binary = Binary::load(&binary_data, &binary_path, args.show_source)?;
+    let binary_data = BinaryData::load(binary_bytes);
+    let binary = Binary::load(&binary_data, &binary_path, false)?;
     let matcher = disasm::SymbolMatcher::new(&args.needle);
 
     let mut config = DisasmConfig::default();

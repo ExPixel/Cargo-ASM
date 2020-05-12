@@ -116,7 +116,7 @@ pub fn disassemble<'a>(
 ) -> anyhow::Result<()> {
     context.clear();
 
-    let symbol_code = &context.binary.data[symbol.offset_range()];
+    let symbol_code = &context.binary.data()[symbol.offset_range()];
 
     // FIXME support other ISAs
     let cs = Capstone::new()
@@ -160,7 +160,7 @@ fn write_disasm_output<'a, 'i>(
 
     for (instr_idx, instr) in instrs.iter().enumerate() {
         if context.config.display_source {
-            let line_mappings = &context.line_mappings;
+            let line_mappings = &mut context.line_mappings;
             let line_cache = &mut context.line_cache;
             if let Some(line) = line_mappings
                 .get(instr.address())?

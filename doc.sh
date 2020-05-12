@@ -11,6 +11,7 @@ documented_packages_list=(\
     gimli \
     capstone \
     goblin \
+    pdb \
     rustc-demangle)
 
 documented_packages=""
