@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 capstone = { git = "https://github.com/ExPixel/capstone-rs.git", branch = "master" }
-gimli = "0.20"
+gimli = "0.21"
 clap = "2.33"
 anyhow = "1.0"
 goblin = "0.2"
