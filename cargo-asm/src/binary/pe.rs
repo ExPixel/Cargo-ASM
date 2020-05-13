@@ -5,6 +5,7 @@ use super::{
 };
 use anyhow::Context as _;
 use goblin::pe::PE;
+use pdb::Source as _;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
@@ -69,15 +70,16 @@ pub fn analyze_pe<'a>(
     };
 
     let pe_ext = if let Some(ref pdb_path) = pdb_path {
-        let pdb_data = std::fs::read(pdb_path)
-            .with_context(|| format!("failed to read file `{}`", pdb_path.display()))?;
-        let pdb_vec = PDBVecSource::new(pdb_data);
-        let pdb = pdb::PDB::open(pdb_vec)?;
+        todo!();
+    // let pdb_data = std::fs::read(pdb_path)
+    //     .with_context(|| format!("failed to read file `{}`", pdb_path.display()))?;
+    // let pdb = pdb::PDB::open(std::io::Cursor::new(pdb_data))?;
+    // todo!();
 
-        PEExt {
-            pe,
-            debug: PEDebug::PDB(pdb),
-        }
+    // PEExt {
+    //     pe,
+    //     debug: PEDebug::PDB(pdb),
+    // }
     } else {
         PEExt {
             pe,
@@ -314,34 +316,5 @@ pub struct PEExt<'a> {
 #[derive(Debug)]
 pub enum PEDebug<'a> {
     Dwarf,
-    PDB(pdb::PDB<'a, PDBVecSource<'a>>),
-}
-
-pub struct PDBVecSource<'a> {
-    data: Vec<u8>,
-    _phantom: std::marker::PhantomData<&'a ()>,
-}
-
-impl<'a> std::fmt::Debug for PDBVecSource<'a> {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!();
-    }
-}
-
-impl<'a> PDBVecSource<'a> {
-    fn new(data: Vec<u8>) -> PDBVecSource<'a> {
-        PDBVecSource {
-            data,
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'a> pdb::Source<'a> for PDBVecSource<'a> {
-    fn view(
-        &mut self,
-        slices: &[pdb::SourceSlice],
-    ) -> Result<Box<dyn pdb::SourceView<'a>>, std::io::Error> {
-        todo!();
-    }
+    PDB(pdb::PDB<'a, std::io::Cursor<Vec<u8>>>),
 }
