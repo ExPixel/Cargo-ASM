@@ -1,18 +1,72 @@
+mod arena;
 pub mod dwarf;
 pub mod elf;
 pub mod pe;
 
 use crate::errors::CargoAsmError;
 use crate::platform::{path_converter_from, NativePathConverter, PathConverter, Platform};
+use arena::SymbolArena;
 use goblin::Object;
 use once_cell::unsync::OnceCell;
 use std::borrow::Cow;
+use std::cell::{RefCell, RefMut};
 use std::ops::Range;
 use std::path::Path;
 
+pub type SlicePDB<'a> = pdb::PDB<'a, std::fs::File>;
+
+#[derive(Debug)]
+pub struct BinaryData {
+    data: Box<[u8]>,
+    syms: RefCell<SymbolArena<'static>>,
+    pdb: RefCell<Option<SlicePDB<'static>>>,
+}
+
+impl BinaryData {
+    pub fn load(data: Vec<u8>) -> BinaryData {
+        BinaryData {
+            data: data.into_boxed_slice(),
+            syms: RefCell::new(SymbolArena::new()),
+            pdb: RefCell::new(None),
+        }
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
+    // pub fn data_mut(&mut self) -> &mut [u8] {
+    //     &mut self.data
+    // }
+
+    fn sym_arena_mut<'a>(&'a self) -> RefMut<SymbolArena<'a>> {
+        // Casting away lifetimes :)
+        // I don't move any of the data in this struct if that makes you feel better.
+        unsafe {
+            std::mem::transmute::<RefMut<SymbolArena<'_>>, RefMut<SymbolArena<'a>>>(
+                self.syms.borrow_mut(),
+            )
+        }
+    }
+
+    fn pdb_mut<'a>(&'a self) -> RefMut<'a, Option<SlicePDB<'a>>> {
+        // Casting away lifetimes :)
+        // I don't move any of the data in this struct if that makes you feel better.
+        unsafe {
+            std::mem::transmute::<RefMut<'_, Option<SlicePDB<'_>>>, RefMut<'a, Option<SlicePDB<'a>>>>(
+                self.pdb.borrow_mut(),
+            )
+        }
+    }
+
+    fn set_pdb(&self, pdb: SlicePDB<'static>) {
+        *self.pdb.borrow_mut() = Some(pdb);
+    }
+}
+
 #[derive(Debug)]
 pub struct Binary<'a> {
-    pub data: &'a [u8],
+    pub data: &'a BinaryData,
     pub arch: BinaryArch,
     pub bits: BinaryBits,
     pub endian: BinaryEndian,
@@ -22,11 +76,11 @@ pub struct Binary<'a> {
 
 impl<'a> Binary<'a> {
     pub fn load(
-        data: &'a [u8],
+        data: &'a BinaryData,
         binary_path: &Path,
         debug_info: bool,
     ) -> anyhow::Result<Binary<'a>> {
-        match Object::parse(data)? {
+        match Object::parse(data.data())? {
             Object::Elf(elf) => elf::analyze_elf(elf, data, debug_info),
 
             Object::PE(pe) => pe::analyze_pe(pe, data, binary_path, debug_info),
@@ -58,7 +112,7 @@ impl<'a> Binary<'a> {
                 mapper = elf::elf_line_mapper(
                     elf,
                     self.endian,
-                    &self.data,
+                    &self.data.data(),
                     base_directory,
                     resolve_strategy,
                 )?;
@@ -69,7 +123,7 @@ impl<'a> Binary<'a> {
                 mapper = pe::pe_line_mapper(
                     pe,
                     self.endian,
-                    &self.data,
+                    &self.data.data(),
                     base_directory,
                     resolve_strategy,
                 )?;
@@ -78,6 +132,10 @@ impl<'a> Binary<'a> {
         };
 
         Ok(LineMappings::new(mapper, convert_path))
+    }
+
+    pub fn data(&self) -> &[u8] {
+        self.data.data()
     }
 }
 

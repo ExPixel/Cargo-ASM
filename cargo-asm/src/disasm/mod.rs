@@ -116,7 +116,7 @@ pub fn disassemble<'a>(
 ) -> anyhow::Result<()> {
     context.clear();
 
-    let symbol_code = &context.binary.data[symbol.offset_range()];
+    let symbol_code = &context.binary.data()[symbol.offset_range()];
 
     // FIXME support other ISAs
     let cs = Capstone::new()

@@ -1,7 +1,7 @@
 use super::dwarf::DwarfLineMapper;
 use super::{
-    demangle_name, Binary, BinaryArch, BinaryBits, BinaryEndian, FileResolveStrategy, LineMapper,
-    ObjectExt, Symbol,
+    demangle_name, Binary, BinaryArch, BinaryBits, BinaryData, BinaryEndian, FileResolveStrategy,
+    LineMapper, ObjectExt, Symbol,
 };
 use goblin::elf::Elf;
 use std::borrow::Cow;
@@ -9,7 +9,7 @@ use std::path::Path;
 
 pub fn analyze_elf<'a>(
     elf: Elf<'a>,
-    data: &'a [u8],
+    data: &'a BinaryData,
     _load_debug_info: bool,
 ) -> anyhow::Result<Binary<'a>> {
     use goblin::elf::header;

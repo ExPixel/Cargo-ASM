@@ -1,17 +1,16 @@
 use super::dwarf::DwarfLineMapper;
 use super::{
-    demangle_name, Binary, BinaryArch, BinaryBits, BinaryEndian, FileResolveStrategy, LineMapper,
-    ObjectExt, Symbol,
+    demangle_name, Binary, BinaryArch, BinaryBits, BinaryData, BinaryEndian, FileResolveStrategy,
+    LineMapper, ObjectExt, Symbol, SymbolArena,
 };
 use anyhow::Context as _;
 use goblin::pe::PE;
-use pdb::Source as _;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 pub fn analyze_pe<'a>(
     pe: PE<'a>,
-    data: &'a [u8],
+    data: &'a BinaryData,
     binary_path: &Path,
     _load_debug_info: bool,
 ) -> anyhow::Result<Binary<'a>> {
@@ -53,7 +52,7 @@ pub fn analyze_pe<'a>(
     //     });
     // }
 
-    get_coff_symbols(&pe, data, &mut symbols)?;
+    get_coff_symbols(&pe, data.data(), &mut symbols)?;
 
     let debug_data_pdb = pe
         .debug_data
@@ -70,16 +69,22 @@ pub fn analyze_pe<'a>(
     };
 
     let pe_ext = if let Some(ref pdb_path) = pdb_path {
-        todo!();
-    // let pdb_data = std::fs::read(pdb_path)
-    //     .with_context(|| format!("failed to read file `{}`", pdb_path.display()))?;
-    // let pdb = pdb::PDB::open(std::io::Cursor::new(pdb_data))?;
-    // todo!();
+        let pdb_file = std::fs::File::open(pdb_path)
+            .with_context(|| format!("failed to open file `{}`", pdb_path.display()))?;
+        data.set_pdb(pdb::PDB::open(pdb_file)?);
+        // let mut pdb = pdb::PDB::open(pdb_file)?;
 
-    // PEExt {
-    //     pe,
-    //     debug: PEDebug::PDB(pdb),
-    // }
+        get_pdb_symbols(
+            pe.image_base as u64,
+            &mut data.pdb_mut().as_mut().unwrap(),
+            &mut data.sym_arena_mut(),
+            &mut symbols,
+        )?;
+
+        PEExt {
+            pe,
+            debug: PEDebug::PDB,
+        }
     } else {
         PEExt {
             pe,
@@ -130,6 +135,78 @@ fn find_pdb_path(binary_path: &Path) -> Option<PathBuf> {
     }
 
     None
+}
+
+fn get_pdb_symbols<'a, S: 'a + pdb::Source<'a>>(
+    image_base: u64,
+    pdb: &mut pdb::PDB<'a, S>,
+    sym_arena: &mut SymbolArena<'a>,
+    symbols: &mut Vec<Symbol<'a>>,
+) -> anyhow::Result<()> {
+    use pdb::FallibleIterator as _;
+
+    let mut add_symbol = |sym_name: &str, sym_offset: usize, sym_address: u64, sym_size: usize| {
+        let sym_name = unsafe { sym_arena.alloc(sym_name) };
+        let sym_name_demangled = demangle_name(sym_name);
+
+        symbols.push(Symbol {
+            original_name: Cow::from(sym_name),
+            demangled_name: sym_name_demangled,
+            short_demangled_name: Default::default(),
+
+            offset: sym_offset,
+            addr: sym_address,
+            size: sym_size,
+        });
+    };
+
+    let sections = if let Some(section) = pdb.sections()? {
+        section
+    } else {
+        return Ok(());
+    };
+    let address_map = pdb.address_map()?;
+    let debug_info = pdb.debug_information()?;
+    let mut modules = debug_info.modules()?;
+
+    while let Some(module) = modules.next()? {
+        let module_info = if let Some(info) = pdb.module_info(&module)? {
+            info
+        } else {
+            continue;
+        };
+        let mut pdb_symbols = module_info.symbols()?;
+        while let Some(symbol) = pdb_symbols.next()? {
+            match symbol.parse() {
+                Ok(pdb::SymbolData::Procedure(sym_data)) => {
+                    if sym_data.offset.section == 0 {
+                        continue;
+                    }
+
+                    let sym_offset =
+                        if let Some(section) = sections.get(sym_data.offset.section as usize - 1) {
+                            section.pointer_to_raw_data as usize + sym_data.offset.offset as usize
+                        } else {
+                            continue;
+                        };
+
+                    let rva = sym_data.offset.to_rva(&address_map).unwrap_or_default();
+                    let sym_address = rva.0 as u64 + image_base;
+
+                    add_symbol(
+                        &sym_data.name.to_string(),
+                        sym_offset,
+                        sym_address,
+                        sym_data.len as usize,
+                    );
+                }
+
+                _ => {}
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn get_coff_symbols<'a>(
@@ -229,8 +306,9 @@ pub(super) fn pe_line_mapper<'a>(
 ) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
     match &pe.debug {
         PEDebug::Dwarf => pe_dwarf_line_mapper(pe, endian, data, base_directory, resolve_strategy),
-        PEDebug::PDB(ref _pdb) => {
-            pe_pdb_line_mapper(pe, endian, data, base_directory, resolve_strategy)
+        PEDebug::PDB => {
+            todo!();
+            // pe_pdb_line_mapper(pe, endian, data, base_directory, resolve_strategy)
         }
     }
 }
@@ -310,11 +388,11 @@ fn get_section_by_name<'a>(
 #[derive(Debug)]
 pub struct PEExt<'a> {
     pe: PE<'a>,
-    debug: PEDebug<'a>,
+    debug: PEDebug,
 }
 
 #[derive(Debug)]
-pub enum PEDebug<'a> {
+pub enum PEDebug {
     Dwarf,
-    PDB(pdb::PDB<'a, std::io::Cursor<Vec<u8>>>),
+    PDB,
 }
