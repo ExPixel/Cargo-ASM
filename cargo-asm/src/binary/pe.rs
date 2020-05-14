@@ -145,21 +145,6 @@ fn get_pdb_symbols<'a, S: 'a + pdb::Source<'a>>(
 ) -> anyhow::Result<()> {
     use pdb::FallibleIterator as _;
 
-    let mut add_symbol = |sym_name: &str, sym_offset: usize, sym_address: u64, sym_size: usize| {
-        let sym_name = unsafe { sym_arena.alloc(sym_name) };
-        let sym_name_demangled = demangle_name(sym_name);
-
-        symbols.push(Symbol {
-            original_name: Cow::from(sym_name),
-            demangled_name: sym_name_demangled,
-            short_demangled_name: Default::default(),
-
-            offset: sym_offset,
-            addr: sym_address,
-            size: sym_size,
-        });
-    };
-
     let sections = if let Some(section) = pdb.sections()? {
         section
     } else {
@@ -193,12 +178,18 @@ fn get_pdb_symbols<'a, S: 'a + pdb::Source<'a>>(
                     let rva = sym_data.offset.to_rva(&address_map).unwrap_or_default();
                     let sym_address = rva.0 as u64 + image_base;
 
-                    add_symbol(
-                        &sym_data.name.to_string(),
-                        sym_offset,
-                        sym_address,
-                        sym_data.len as usize,
-                    );
+                    let sym_name = unsafe { sym_arena.alloc(&sym_data.name.to_string()) };
+                    let sym_name_demangled = demangle_name(sym_name);
+
+                    symbols.push(Symbol {
+                        original_name: Cow::from(sym_name),
+                        demangled_name: sym_name_demangled,
+                        short_demangled_name: Default::default(),
+
+                        offset: sym_offset,
+                        addr: sym_address,
+                        size: sym_data.len as usize,
+                    });
                 }
 
                 _ => {}
