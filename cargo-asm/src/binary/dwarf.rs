@@ -1,3 +1,4 @@
+use super::lines::{Line, Lines, Sequence};
 use super::{FileResolveStrategy, LineMapper};
 use crate::platform::PathConverter;
 use once_cell::unsync::OnceCell;
@@ -151,7 +152,7 @@ impl<R: gimli::Reader> DwarfLineMapper<R> {
 
 impl<R: gimli::Reader> LineMapper for DwarfLineMapper<R> {
     fn map_address_to_line(
-        &self,
+        &mut self,
         address: u64,
         convert_path: &dyn PathConverter,
     ) -> anyhow::Result<Option<(&Path, u32)>> {
@@ -186,18 +187,6 @@ impl<R: gimli::Reader> LazyUnit<R> {
             lang,
             lines: OnceCell::default(),
         }
-    }
-
-    fn lines(
-        &self,
-        dwarf: &gimli::Dwarf<R>,
-        base_directory: &Path,
-        resolve_strategy: FileResolveStrategy,
-        convert_path: &dyn PathConverter,
-    ) -> anyhow::Result<&Lines> {
-        self.lines.get_or_try_init(|| {
-            self.load_lines(dwarf, base_directory, resolve_strategy, convert_path)
-        })
     }
 
     fn load_lines(
@@ -325,7 +314,10 @@ impl<R: gimli::Reader> LazyUnit<R> {
         resolve_strategy: FileResolveStrategy,
         convert_path: &dyn PathConverter,
     ) -> anyhow::Result<Option<(&Path, u32)>> {
-        self.lines(dwarf, base_directory, resolve_strategy, convert_path)
+        self.lines
+            .get_or_try_init(|| {
+                self.load_lines(dwarf, base_directory, resolve_strategy, convert_path)
+            })
             .map(|lines| lines.lines_for_addr(addr))
     }
 
@@ -377,53 +369,4 @@ impl<R: gimli::Reader> LazyUnit<R> {
 
         Ok(path)
     }
-}
-
-struct Lines {
-    sequences: Box<[Sequence]>,
-    files: Box<[PathBuf]>,
-}
-
-impl Lines {
-    pub fn empty() -> Lines {
-        Lines {
-            sequences: Box::new([] as [Sequence; 0]),
-            files: Box::new([] as [PathBuf; 0]),
-        }
-    }
-
-    fn lines_for_addr(&self, addr: u64) -> Option<(&Path, u32)> {
-        let sequence = self
-            .sequences
-            .binary_search_by(|probe| {
-                if probe.range.start > addr {
-                    std::cmp::Ordering::Greater
-                } else if probe.range.end <= addr {
-                    std::cmp::Ordering::Less
-                } else {
-                    std::cmp::Ordering::Equal
-                }
-            })
-            .ok()
-            .and_then(|seq_idx| self.sequences.get(seq_idx))?;
-
-        sequence
-            .lines
-            .binary_search_by(|probe| probe.addr.cmp(&addr))
-            .ok()
-            .and_then(|line_idx| sequence.lines.get(line_idx))
-            .map(|line| (self.files[line.file].as_path(), line.line))
-    }
-}
-
-/// Contiguous sequence of bytes and their associated lines.
-struct Sequence {
-    range: Range<u64>,
-    lines: Box<[Line]>,
-}
-
-struct Line {
-    addr: u64,
-    file: usize,
-    line: u32,
 }

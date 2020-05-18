@@ -1,11 +1,12 @@
 use super::dwarf::DwarfLineMapper;
 use super::{
-    demangle_name, Binary, BinaryArch, BinaryBits, BinaryData, BinaryEndian, FileResolveStrategy,
-    LineMapper, ObjectExt, Symbol, SymbolArena,
+    demangle_name, Binary, BinaryArch, BinaryBits, BinaryData, BinaryEndian, FilePDB,
+    FileResolveStrategy, LineMapper, ObjectExt, StringArena, Symbol,
 };
 use anyhow::Context as _;
 use goblin::pe::PE;
 use std::borrow::Cow;
+use std::cell::RefMut;
 use std::path::{Path, PathBuf};
 
 pub fn analyze_pe<'a>(
@@ -140,7 +141,7 @@ fn find_pdb_path(binary_path: &Path) -> Option<PathBuf> {
 fn get_pdb_symbols<'a, S: 'a + pdb::Source<'a>>(
     image_base: u64,
     pdb: &mut pdb::PDB<'a, S>,
-    sym_arena: &mut SymbolArena<'a>,
+    sym_arena: &mut StringArena<'a>,
     symbols: &mut Vec<Symbol<'a>>,
 ) -> anyhow::Result<()> {
     use pdb::FallibleIterator as _;
@@ -290,6 +291,7 @@ fn get_coff_symbols<'a>(
 
 pub(super) fn pe_line_mapper<'a>(
     pe: &PEExt<'a>,
+    pdb: RefMut<'a, Option<FilePDB<'a>>>,
     endian: BinaryEndian,
     data: &'a [u8],
     base_directory: &Path,
@@ -297,21 +299,33 @@ pub(super) fn pe_line_mapper<'a>(
 ) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
     match &pe.debug {
         PEDebug::Dwarf => pe_dwarf_line_mapper(pe, endian, data, base_directory, resolve_strategy),
-        PEDebug::PDB => {
-            todo!();
-            // pe_pdb_line_mapper(pe, endian, data, base_directory, resolve_strategy)
-        }
+        PEDebug::PDB => pe_pdb_line_mapper(&pe.pe, pdb, base_directory, resolve_strategy),
     }
 }
 
 fn pe_pdb_line_mapper<'a>(
-    _pe: &PEExt<'a>,
-    _endian: BinaryEndian,
-    _data: &'a [u8],
-    _base_directory: &Path,
-    _resolve_strategy: FileResolveStrategy,
+    pe: &PE<'a>,
+    mut pdb: std::cell::RefMut<'a, Option<FilePDB<'a>>>,
+    base_directory: &Path,
+    resolve_strategy: FileResolveStrategy,
 ) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
-    anyhow::bail!("not yet implemented")
+    use super::pdb_lines::PDBLineMapper;
+
+    let section_addresses = if let Some(ref sections) = pdb.as_mut().expect("pdb").sections()? {
+        sections
+            .iter()
+            .map(|section| pe.image_base as u64 + section.virtual_address as u64)
+            .collect::<Vec<u64>>()
+    } else {
+        Vec::new()
+    };
+
+    Ok(Box::new(PDBLineMapper::new(
+        section_addresses,
+        RefMut::map(pdb, |p| p.as_mut().expect("pdb")),
+        base_directory,
+        resolve_strategy,
+    )?))
 }
 
 fn pe_dwarf_line_mapper<'a>(

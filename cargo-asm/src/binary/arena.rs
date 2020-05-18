@@ -3,14 +3,14 @@ use std::marker::PhantomData;
 pub const CHUNK_SIZE: usize = 1024;
 
 #[derive(Debug)]
-pub struct SymbolArena<'a> {
+pub struct StringArena<'a> {
     chunks: Vec<SymbolsChunk>,
     _phantom: PhantomData<&'a ()>,
 }
 
-impl<'a> SymbolArena<'a> {
-    pub fn new() -> SymbolArena<'static> {
-        SymbolArena {
+impl<'a> StringArena<'a> {
+    pub fn new() -> StringArena<'static> {
+        StringArena {
             chunks: Vec::new(),
             _phantom: PhantomData,
         }
