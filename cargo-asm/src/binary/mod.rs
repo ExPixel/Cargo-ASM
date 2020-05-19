@@ -252,7 +252,8 @@ impl BinaryBits {
 
 fn demangle_name(name: &str) -> Cow<'_, str> {
     if let Ok(demangled) = rustc_demangle::try_demangle(&name) {
-        Cow::from(demangled.to_string())
+        let demangled_string = format!("{:#}", demangled);
+        Cow::from(demangled_string)
     } else {
         Cow::from(name)
     }
