@@ -1,6 +1,7 @@
 mod arena;
 pub mod dwarf;
 pub mod elf;
+pub mod mach;
 pub mod pdb_lines;
 pub mod pe;
 
@@ -86,7 +87,7 @@ impl<'a> Binary<'a> {
 
             Object::PE(pe) => pe::analyze_pe(pe, data, binary_path, debug_info),
 
-            Object::Mach(_mach) => Err(CargoAsmError::UnsupportedBinaryFormat("Macho-O").into()),
+            Object::Mach(mach) => mach::analyze_mach(mach, data, debug_info),
 
             Object::Archive(_archive) => {
                 Err(CargoAsmError::UnsupportedBinaryFormat("Archive").into())
@@ -131,6 +132,10 @@ impl<'a> Binary<'a> {
                 )?;
                 convert_path = path_converter_from(Platform::Windows);
             }
+
+            ObjectExt::Mach(_) => {
+                todo!("implement mach line mapper");
+            }
         };
 
         Ok(LineMappings::new(mapper, convert_path))
@@ -145,6 +150,7 @@ impl<'a> Binary<'a> {
 pub enum ObjectExt<'a> {
     Elf(goblin::elf::Elf<'a>),
     PE(pe::PEExt<'a>),
+    Mach(goblin::mach::MachO<'a>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -227,6 +233,23 @@ impl BinaryArch {
             // probably forget for a while.
             header::COFF_MACHINE_THUMB => Some(BinaryArch::ARM),
 
+            _ => Some(BinaryArch::Unknown),
+        }
+    }
+
+    pub fn from_mach_cpu_types(cpu_type: u32, _cpu_subtype: u32) -> Option<Self> {
+        use goblin::mach::constants::cputype;
+
+        match cpu_type {
+            cputype::CPU_TYPE_ARM => Some(BinaryArch::ARM),
+            cputype::CPU_TYPE_ARM64 => Some(BinaryArch::AArch64),
+            cputype::CPU_TYPE_ARM64_32 => Some(BinaryArch::AArch64),
+            cputype::CPU_TYPE_MIPS => Some(BinaryArch::MIPS),
+            cputype::CPU_TYPE_POWERPC => Some(BinaryArch::PowerPC),
+            cputype::CPU_TYPE_POWERPC64 => Some(BinaryArch::PowerPC64),
+            cputype::CPU_TYPE_SPARC => Some(BinaryArch::SPARC),
+            cputype::CPU_TYPE_X86 => Some(BinaryArch::X86),
+            cputype::CPU_TYPE_X86_64 => Some(BinaryArch::AMD64),
             _ => Some(BinaryArch::Unknown),
         }
     }
