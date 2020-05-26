@@ -61,6 +61,7 @@ impl BinaryData {
     }
 
     fn set_pdb(&self, pdb: FilePDB<'static>) {
+        assert!(self.pdb.borrow().is_none(), "cannot reassign PDB");
         *self.pdb.borrow_mut() = Some(pdb);
     }
 }
