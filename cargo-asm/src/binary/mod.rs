@@ -88,7 +88,7 @@ impl<'a> Binary<'a> {
 
             Object::PE(pe) => pe::analyze_pe(pe, data, binary_path, debug_info),
 
-            Object::Mach(mach) => mach::analyze_mach(mach, data, debug_info),
+            Object::Mach(mach) => mach::analyze_mach(mach, data, binary_path, debug_info),
 
             Object::Archive(_archive) => {
                 Err(CargoAsmError::UnsupportedBinaryFormat("Archive").into())
@@ -151,7 +151,7 @@ impl<'a> Binary<'a> {
 pub enum ObjectExt<'a> {
     Elf(goblin::elf::Elf<'a>),
     PE(pe::PEExt<'a>),
-    Mach(goblin::mach::MachO<'a>),
+    Mach(mach::MachExt<'a>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

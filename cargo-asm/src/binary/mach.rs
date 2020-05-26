@@ -4,21 +4,28 @@ use super::{
 use goblin::mach::symbols;
 use goblin::mach::{Mach, MachO};
 use std::borrow::Cow;
+use std::path::{Path, PathBuf};
 
 pub fn analyze_mach<'a>(
     mach: Mach<'a>,
     data: &'a BinaryData,
+    binary_path: &Path,
     load_debug_info: bool,
 ) -> anyhow::Result<Binary<'a>> {
     match mach {
-        goblin::mach::Mach::Fat(multi) => analyze_mach_object(multi.get(0)?, data, load_debug_info),
-        goblin::mach::Mach::Binary(obj) => analyze_mach_object(obj, data, load_debug_info),
+        goblin::mach::Mach::Fat(multi) => {
+            analyze_mach_object(multi.get(0)?, data, binary_path, load_debug_info)
+        }
+        goblin::mach::Mach::Binary(obj) => {
+            analyze_mach_object(obj, data, binary_path, load_debug_info)
+        }
     }
 }
 
 pub fn analyze_mach_object<'a>(
     mach: MachO<'a>,
     data: &'a BinaryData,
+    binary_path: &Path,
     _load_debug_info: bool,
 ) -> anyhow::Result<Binary<'a>> {
     let bits = if mach.is_64 {
@@ -38,7 +45,8 @@ pub fn analyze_mach_object<'a>(
 
     let mut section_offsets: Vec<(u64, usize)> = Vec::new();
     for segment in mach.segments.iter() {
-        for &(ref section, _) in segment.sections()?.iter() {
+        for s in segment.into_iter() {
+            let (section, _) = s?;
             section_offsets.push((section.addr as u64, section.offset as usize));
         }
     }
@@ -90,14 +98,84 @@ pub fn analyze_mach_object<'a>(
         symbol.addr = 0;
     }
 
+    let ext = if let Some(external_dwarf) = find_external_dwarf(binary_path) {
+        MachExt {
+            mach,
+            debug: MachDebug::External(external_dwarf),
+        }
+    } else {
+        MachExt {
+            mach,
+            debug: MachDebug::Internal,
+        }
+    };
+
     Ok(Binary {
         data,
         bits,
         arch,
         endian,
         symbols,
-        object: ObjectExt::Mach(mach),
+        object: ObjectExt::Mach(ext),
     })
 }
 
+// FIXME this is a very bad way to search for DWARF debug information. The path to the separate
+// DWAF binary is actually stored somewhere in the Mach-O file (If you run `strings` on it the path
+// can be found), I just have no idea where exactly in the Mach-O it's stored and I can't find
+// information on it either. I'll just have to dig through all of the load commands at some point
+// to find where the string is placed.
+fn find_external_dwarf(binary_path: &Path) -> Option<PathBuf> {
+    let directory = binary_path.parent()?;
+    let dsym_name = {
+        let mut n = binary_path.file_stem()?.to_os_string();
+        n.push(".dSYM");
+        n
+    };
+    let dsym_path = directory.join(dsym_name);
+    let dwarf_path = {
+        let mut p = dsym_path;
+        p.push("Contents");
+        p.push("Resources");
+        p.push("DWARF");
+        p.push(binary_path.file_name()?);
+        p
+    };
+
+    if dwarf_path.is_file() {
+        Some(dwarf_path)
+    } else {
+        None
+    }
+}
+
 const MACH_TYPE_FUNC: u8 = 0x24;
+
+#[derive(Debug)]
+pub struct MachExt<'a> {
+    mach: MachO<'a>,
+    debug: MachDebug,
+}
+
+#[derive(Debug)]
+pub enum MachDebug {
+    /// DWARF debug information is in the Mach-O itself.
+    Internal,
+
+    /// DWARF debug information is in some separate binary (usually in [binary].dSYM somewhere)
+    External(PathBuf),
+}
+
+fn get_section_by_name<'a>(
+    mach: &MachO<'a>,
+    binary: &'a [u8],
+    name: &str,
+) -> anyhow::Result<&'a [u8]> {
+    for segment in mach.segments.iter() {
+        for s in segment.into_iter() {
+            let (section, section_data) = s?;
+            return Ok(section_data);
+        }
+    }
+    Ok(&[])
+}
