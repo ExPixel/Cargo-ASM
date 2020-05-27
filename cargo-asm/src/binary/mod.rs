@@ -11,7 +11,7 @@ use arena::StringArena;
 use goblin::Object;
 use once_cell::unsync::OnceCell;
 use std::borrow::Cow;
-use std::cell::{RefCell, RefMut};
+use std::cell::{Ref, RefCell, RefMut};
 use std::ops::Range;
 use std::path::Path;
 
@@ -21,7 +21,7 @@ pub type FilePDB<'a> = pdb::PDB<'a, std::fs::File>;
 pub struct BinaryData {
     data: Box<[u8]>,
     syms: RefCell<StringArena<'static>>,
-    pdb: RefCell<Option<FilePDB<'static>>>,
+    debug: RefCell<Option<DebugInfo<'static>>>,
 }
 
 impl BinaryData {
@@ -29,7 +29,7 @@ impl BinaryData {
         BinaryData {
             data: data.into_boxed_slice(),
             syms: RefCell::new(StringArena::new()),
-            pdb: RefCell::new(None),
+            debug: RefCell::new(None),
         }
     }
 
@@ -43,7 +43,6 @@ impl BinaryData {
 
     fn sym_arena_mut<'a>(&'a self) -> RefMut<StringArena<'a>> {
         // Casting away lifetimes :)
-        // I don't move any of the data in this struct if that makes you feel better.
         unsafe {
             std::mem::transmute::<RefMut<StringArena<'_>>, RefMut<StringArena<'a>>>(
                 self.syms.borrow_mut(),
@@ -51,20 +50,55 @@ impl BinaryData {
         }
     }
 
-    fn pdb_mut<'a>(&'a self) -> RefMut<'a, Option<FilePDB<'a>>> {
+    fn dwarf_data<'a>(&'a self) -> Ref<'a, [u8]> {
         // Casting away lifetimes :)
         // I don't move any of the data in this struct if that makes you feel better.
         unsafe {
-            std::mem::transmute::<RefMut<'_, Option<FilePDB<'_>>>, RefMut<'a, Option<FilePDB<'a>>>>(
-                self.pdb.borrow_mut(),
-            )
+            std::mem::transmute::<Ref<'_, [u8]>, Ref<'a, [u8]>>(Ref::map(
+                self.debug.borrow(),
+                |d| {
+                    if let Some(DebugInfo::DwarfData(ref data)) = d {
+                        data as &[u8]
+                    } else {
+                        panic!("debug info is not dwarf data")
+                    }
+                },
+            ))
         }
     }
 
-    fn set_pdb(&self, pdb: FilePDB<'static>) {
-        assert!(self.pdb.borrow().is_none(), "cannot reassign PDB");
-        *self.pdb.borrow_mut() = Some(pdb);
+    fn pdb_mut<'a>(&'a self) -> RefMut<'a, FilePDB<'a>> {
+        // Casting away lifetimes :)
+        // I don't move any of the data in this struct if that makes you feel better.
+        unsafe {
+            std::mem::transmute::<RefMut<'_, FilePDB<'_>>, RefMut<'a, FilePDB<'a>>>(RefMut::map(
+                self.debug.borrow_mut(),
+                |d| {
+                    if let Some(DebugInfo::PDB(ref mut pdb)) = d {
+                        pdb
+                    } else {
+                        panic!("debug info is not a PDB")
+                    }
+                },
+            ))
+        }
     }
+
+    fn set_dwarf_data(&self, data: Vec<u8>) {
+        assert!(self.debug.borrow().is_none(), "cannot reassign debug info");
+        *self.debug.borrow_mut() = Some(DebugInfo::DwarfData(data));
+    }
+
+    fn set_pdb(&self, pdb: FilePDB<'static>) {
+        assert!(self.debug.borrow().is_none(), "cannot reassign debug info");
+        *self.debug.borrow_mut() = Some(DebugInfo::PDB(pdb));
+    }
+}
+
+#[derive(Debug)]
+enum DebugInfo<'a> {
+    PDB(FilePDB<'a>),
+    DwarfData(Vec<u8>),
 }
 
 #[derive(Debug)]
@@ -134,8 +168,15 @@ impl<'a> Binary<'a> {
                 convert_path = path_converter_from(Platform::Windows);
             }
 
-            ObjectExt::Mach(_) => {
-                todo!("implement mach line mapper");
+            ObjectExt::Mach(ref mach) => {
+                mapper = mach::mach_line_mapper(
+                    mach,
+                    self.endian,
+                    &self.data,
+                    base_directory,
+                    resolve_strategy,
+                )?;
+                convert_path = path_converter_from(Platform::Unix);
             }
         };
 

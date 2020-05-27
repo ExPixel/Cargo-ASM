@@ -1,5 +1,7 @@
+use super::dwarf::DwarfLineMapper;
 use super::{
-    demangle_name, Binary, BinaryArch, BinaryBits, BinaryData, BinaryEndian, ObjectExt, Symbol,
+    demangle_name, Binary, BinaryArch, BinaryBits, BinaryData, BinaryEndian, FileResolveStrategy,
+    LineMapper, ObjectExt, Symbol,
 };
 use goblin::mach::symbols;
 use goblin::mach::{Mach, MachO};
@@ -118,6 +120,134 @@ pub fn analyze_mach_object<'a>(
         symbols,
         object: ObjectExt::Mach(ext),
     })
+}
+
+pub(super) fn mach_line_mapper<'a>(
+    mach: &'a MachExt<'a>,
+    endian: BinaryEndian,
+    binary_data: &'a BinaryData,
+    base_directory: &Path,
+    resolve_strategy: FileResolveStrategy,
+) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
+    match &mach.debug {
+        MachDebug::Internal => mach_internal_line_mapper(
+            &mach.mach,
+            endian,
+            binary_data.data(),
+            base_directory,
+            resolve_strategy,
+        ),
+        MachDebug::External(ref dwarf_file) => mach_external_line_mapper(
+            &binary_data,
+            dwarf_file,
+            endian,
+            base_directory,
+            resolve_strategy,
+        ),
+    }
+}
+
+fn mach_internal_line_mapper<'a>(
+    mach: &'a MachO<'a>,
+    endian: BinaryEndian,
+    data: &'a [u8],
+    base_directory: &Path,
+    resolve_strategy: FileResolveStrategy,
+) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
+    let mapper: Box<dyn LineMapper> = if endian == BinaryEndian::Little {
+        let loader = |section: gimli::SectionId| {
+            get_section_by_name(mach, data, section.name())
+                .map(|d| gimli::EndianSlice::new(d, gimli::LittleEndian))
+        };
+        let sup_loader =
+            |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::LittleEndian));
+
+        Box::new(DwarfLineMapper::new(
+            loader,
+            sup_loader,
+            base_directory,
+            resolve_strategy,
+        )?)
+    } else {
+        let loader = move |section: gimli::SectionId| {
+            get_section_by_name(&mach, data, section.name())
+                .map(|d| gimli::EndianSlice::new(d, gimli::BigEndian))
+        };
+        let sup_loader =
+            |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::BigEndian));
+
+        Box::new(DwarfLineMapper::new(
+            loader,
+            sup_loader,
+            base_directory,
+            resolve_strategy,
+        )?)
+    };
+
+    Ok(mapper)
+}
+
+fn mach_external_line_mapper<'a>(
+    binary_data: &'a BinaryData,
+    dwarf_path: &Path,
+    endian: BinaryEndian,
+    base_directory: &Path,
+    resolve_strategy: FileResolveStrategy,
+) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
+    use goblin::Object;
+
+    let dwarf_data = std::fs::read(dwarf_path)?;
+    binary_data.set_dwarf_data(dwarf_data);
+
+    let dwarf_data_ref = binary_data.dwarf_data();
+
+    // Once again, I must sadly cast away lifetimes. I would rather do this than try to use Pin or
+    // some other method of creating a self referential struct. So that the Ref doesn't get
+    // dropped, I also move dwarf_data_ref into the loader closure.
+    let dwarf_data_slice = unsafe { std::mem::transmute::<&'_ [u8], &'a [u8]>(&*dwarf_data_ref) };
+
+    let dwarf_mach = if let Object::Mach(mach) = Object::parse(dwarf_data_slice)? {
+        match mach {
+            goblin::mach::Mach::Fat(multi) => multi.get(0)?,
+            goblin::mach::Mach::Binary(obj) => obj,
+        }
+    } else {
+        return Ok(Box::new(super::NoOpLineMapper));
+    };
+
+    let mapper: Box<dyn LineMapper> = if endian == BinaryEndian::Little {
+        let loader = move |section: gimli::SectionId| {
+            let _ = dwarf_data_ref;
+            get_section_by_name(&dwarf_mach, binary_data.data(), section.name())
+                .map(|d| gimli::EndianSlice::new(d, gimli::LittleEndian))
+        };
+        let sup_loader =
+            |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::LittleEndian));
+
+        Box::new(DwarfLineMapper::new(
+            loader,
+            sup_loader,
+            base_directory,
+            resolve_strategy,
+        )?)
+    } else {
+        let loader = move |section: gimli::SectionId| {
+            let _ = dwarf_data_ref;
+            get_section_by_name(&dwarf_mach, binary_data.data(), section.name())
+                .map(|d| gimli::EndianSlice::new(d, gimli::BigEndian))
+        };
+        let sup_loader =
+            |_section: gimli::SectionId| Ok(gimli::EndianSlice::new(&[], gimli::BigEndian));
+
+        Box::new(DwarfLineMapper::new(
+            loader,
+            sup_loader,
+            base_directory,
+            resolve_strategy,
+        )?)
+    };
+
+    Ok(mapper)
 }
 
 // FIXME this is a very bad way to search for DWARF debug information. The path to the separate

@@ -77,7 +77,7 @@ pub fn analyze_pe<'a>(
 
         get_pdb_symbols(
             pe.image_base as u64,
-            &mut data.pdb_mut().as_mut().unwrap(),
+            &mut data.pdb_mut(),
             &mut data.sym_arena_mut(),
             &mut symbols,
         )?;
@@ -291,7 +291,7 @@ fn get_coff_symbols<'a>(
 
 pub(super) fn pe_line_mapper<'a>(
     pe: &PEExt<'a>,
-    pdb: RefMut<'a, Option<FilePDB<'a>>>,
+    pdb: RefMut<'a, FilePDB<'a>>,
     endian: BinaryEndian,
     data: &'a [u8],
     base_directory: &Path,
@@ -305,13 +305,13 @@ pub(super) fn pe_line_mapper<'a>(
 
 fn pe_pdb_line_mapper<'a>(
     pe: &PE<'a>,
-    mut pdb: std::cell::RefMut<'a, Option<FilePDB<'a>>>,
+    mut pdb: std::cell::RefMut<'a, FilePDB<'a>>,
     base_directory: &Path,
     resolve_strategy: FileResolveStrategy,
 ) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
     use super::pdb_lines::PDBLineMapper;
 
-    let section_addresses = if let Some(ref sections) = pdb.as_mut().expect("pdb").sections()? {
+    let section_addresses = if let Some(ref sections) = pdb.sections()? {
         sections
             .iter()
             .map(|section| pe.image_base as u64 + section.virtual_address as u64)
@@ -322,7 +322,7 @@ fn pe_pdb_line_mapper<'a>(
 
     Ok(Box::new(PDBLineMapper::new(
         section_addresses,
-        RefMut::map(pdb, |p| p.as_mut().expect("pdb")),
+        pdb,
         base_directory,
         resolve_strategy,
     )?))
