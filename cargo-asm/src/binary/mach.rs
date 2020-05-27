@@ -130,33 +130,24 @@ pub(super) fn mach_line_mapper<'a>(
     resolve_strategy: FileResolveStrategy,
 ) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
     match &mach.debug {
-        MachDebug::Internal => mach_internal_line_mapper(
-            &mach.mach,
-            endian,
-            binary_data.data(),
-            base_directory,
-            resolve_strategy,
-        ),
-        MachDebug::External(ref dwarf_file) => mach_external_line_mapper(
-            &binary_data,
-            dwarf_file,
-            endian,
-            base_directory,
-            resolve_strategy,
-        ),
+        MachDebug::Internal => {
+            mach_internal_line_mapper(&mach.mach, endian, base_directory, resolve_strategy)
+        }
+        MachDebug::External(ref dwarf_file) => {
+            mach_external_line_mapper(&binary_data, dwarf_file, base_directory, resolve_strategy)
+        }
     }
 }
 
 fn mach_internal_line_mapper<'a>(
     mach: &'a MachO<'a>,
     endian: BinaryEndian,
-    data: &'a [u8],
     base_directory: &Path,
     resolve_strategy: FileResolveStrategy,
 ) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
     let mapper: Box<dyn LineMapper> = if endian == BinaryEndian::Little {
         let loader = |section: gimli::SectionId| {
-            get_section_by_name(mach, data, section.name())
+            get_section_by_name(mach, section.name())
                 .map(|d| gimli::EndianSlice::new(d, gimli::LittleEndian))
         };
         let sup_loader =
@@ -170,7 +161,7 @@ fn mach_internal_line_mapper<'a>(
         )?)
     } else {
         let loader = move |section: gimli::SectionId| {
-            get_section_by_name(&mach, data, section.name())
+            get_section_by_name(&mach, section.name())
                 .map(|d| gimli::EndianSlice::new(d, gimli::BigEndian))
         };
         let sup_loader =
@@ -190,7 +181,6 @@ fn mach_internal_line_mapper<'a>(
 fn mach_external_line_mapper<'a>(
     binary_data: &'a BinaryData,
     dwarf_path: &Path,
-    endian: BinaryEndian,
     base_directory: &Path,
     resolve_strategy: FileResolveStrategy,
 ) -> anyhow::Result<Box<dyn 'a + LineMapper>> {
@@ -215,10 +205,16 @@ fn mach_external_line_mapper<'a>(
         return Ok(Box::new(super::NoOpLineMapper));
     };
 
+    let endian = if dwarf_mach.little_endian {
+        BinaryEndian::Little
+    } else {
+        BinaryEndian::Big
+    };
+
     let mapper: Box<dyn LineMapper> = if endian == BinaryEndian::Little {
         let loader = move |section: gimli::SectionId| {
             let _ = dwarf_data_ref;
-            get_section_by_name(&dwarf_mach, binary_data.data(), section.name())
+            get_section_by_name(&dwarf_mach, section.name())
                 .map(|d| gimli::EndianSlice::new(d, gimli::LittleEndian))
         };
         let sup_loader =
@@ -233,7 +229,7 @@ fn mach_external_line_mapper<'a>(
     } else {
         let loader = move |section: gimli::SectionId| {
             let _ = dwarf_data_ref;
-            get_section_by_name(&dwarf_mach, binary_data.data(), section.name())
+            get_section_by_name(&dwarf_mach, section.name())
                 .map(|d| gimli::EndianSlice::new(d, gimli::BigEndian))
         };
         let sup_loader =
@@ -296,16 +292,32 @@ pub enum MachDebug {
     External(PathBuf),
 }
 
-fn get_section_by_name<'a>(
-    mach: &MachO<'a>,
-    binary: &'a [u8],
-    name: &str,
-) -> anyhow::Result<&'a [u8]> {
+fn get_section_by_name<'a>(mach: &MachO<'a>, mut name: &str) -> anyhow::Result<&'a [u8]> {
+    name = fix_section_name(name);
+
     for segment in mach.segments.iter() {
         for s in segment.into_iter() {
             let (section, section_data) = s?;
-            return Ok(section_data);
+            if section
+                .name()
+                .map(|n| fix_section_name(n) == name)
+                .unwrap_or(false)
+            {
+                return Ok(section_data);
+            }
         }
     }
     Ok(&[])
+}
+
+/// Mach-O section names use __ instead of ., so I just remove those from section names to make
+/// things simpler.
+fn fix_section_name(name: &str) -> &str {
+    if name.starts_with(".") {
+        &name[1..]
+    } else if name.starts_with("__") {
+        &name[2..]
+    } else {
+        name
+    }
 }
