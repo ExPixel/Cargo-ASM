@@ -12,6 +12,7 @@ documented_packages_list=(\
     capstone \
     goblin \
     pdb \
+    termcolor \
     rustc-demangle)
 
 documented_packages=""

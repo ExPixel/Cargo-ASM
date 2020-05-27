@@ -8,6 +8,7 @@ use capstone::prelude::*;
 use capstone::Insn;
 use std::io::Write;
 use std::path::PathBuf;
+use termcolor::{Color, ColorSpec, WriteColor};
 
 pub struct SymbolMatcher<'a> {
     original_needle: &'a str,
@@ -109,10 +110,10 @@ pub struct DisasmConfig {
     pub display_instr_count: bool,
 }
 
-pub fn disassemble<'a>(
+pub fn disassemble<'a, Out: Write + WriteColor>(
     symbol: &Symbol<'a>,
     context: &mut DisasmContext<'a>,
-    output: &mut dyn Write,
+    output: &mut Out,
 ) -> anyhow::Result<()> {
     context.clear();
 
@@ -142,13 +143,15 @@ pub fn disassemble<'a>(
     write_disasm_output(symbol, &instrs, context, output)
 }
 
-fn write_disasm_output<'a, 'i>(
+fn write_disasm_output<'a, 'i, Out: Write + WriteColor>(
     symbol: &Symbol<'a>,
     instrs: &'i [Insn<'i>],
     context: &mut DisasmContext<'a>,
-    output: &mut dyn Write,
+    output: &mut Out,
 ) -> anyhow::Result<()> {
     let m = format::measure(instrs, &context.config, &context);
+
+    output.set_color(ColorSpec::new().set_fg(None).set_bold(false))?;
 
     writeln!(output, "{}:", symbol.demangled_name)?;
 
@@ -166,7 +169,9 @@ fn write_disasm_output<'a, 'i>(
                 .get(instr.address())?
                 .and_then(|(path, line)| line_cache.get_line(path, line))
             {
+                output.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_bold(true))?;
                 writeln!(output, "{}", line)?;
+                output.set_color(ColorSpec::new().set_fg(None).set_bold(false))?;
             }
         }
 
@@ -196,6 +201,7 @@ fn write_disasm_output<'a, 'i>(
         }
 
         if context.config.display_instr {
+            output.set_color(ColorSpec::new().set_fg(Some(Color::Blue)).set_bold(false))?;
             write!(
                 output,
                 "{:<width$}    ",
@@ -203,6 +209,7 @@ fn write_disasm_output<'a, 'i>(
                 width = m.mnemonic_width
             )?;
 
+            output.set_color(ColorSpec::new().set_fg(None).set_bold(false))?;
             if let (true, Some(patch)) = (
                 context.config.display_patches,
                 context.op_patches.get(instr_idx),

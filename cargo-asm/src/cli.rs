@@ -24,6 +24,7 @@ pub struct DisasmArgs {
     pub show_bytes: bool,
     pub show_addrs: bool,
     pub show_source: bool,
+    pub disable_color: bool,
     pub absolute_source_path: bool,
     pub source_root: Option<PathBuf>,
     pub cargo: CargoArgs,
@@ -91,6 +92,12 @@ pub fn parse_cli_args() -> CliCommand {
                         .help("Don't show the address of instructions."),
                 )
                 .arg(
+                    Arg::with_name("no-color")
+                        .short("C")
+                        .long("no-color")
+                        .help("Disable color in disassembly output."),
+                )
+                .arg(
                     Arg::with_name("release")
                         .long("release")
                         .help("Use the release binary built by Cargo."),
@@ -154,6 +161,7 @@ pub fn parse_cli_args() -> CliCommand {
             show_jumps: matches.is_present("jumps"),
             show_bytes: matches.is_present("bytes"),
             show_source: matches.is_present("show-source"),
+            disable_color: matches.is_present("no-color"),
             absolute_source_path: matches.is_present("source-path-absolute"),
             source_root,
         });

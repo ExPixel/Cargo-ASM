@@ -12,6 +12,7 @@ use cli::{CargoArgs, CliCommand, DisasmArgs, ListArgs};
 use disasm::{DisasmConfig, DisasmContext};
 use errors::CargoAsmError;
 use std::path::PathBuf;
+use termcolor::{ColorChoice, StandardStream};
 
 fn main() {
     if let Err(err) = run() {
@@ -130,7 +131,18 @@ fn run_command_disasm(args: DisasmArgs) -> anyhow::Result<()> {
         .find(|sym| matcher.matches(&sym.demangled_name))
         .ok_or_else(|| CargoAsmError::NoSymbolMatch(matcher.needle().to_string()))?;
     let mut context = DisasmContext::new(config, &binary)?;
-    let mut stdout = std::io::stdout();
+
+    let color_choice = if args.disable_color {
+        ColorChoice::Never
+    } else {
+        if atty::is(atty::Stream::Stdout) {
+            ColorChoice::Auto
+        } else {
+            ColorChoice::Never
+        }
+    };
+
+    let mut stdout = StandardStream::stdout(color_choice);
     disasm::disassemble(matched_symbol, &mut context, &mut stdout)?;
 
     Ok(())
