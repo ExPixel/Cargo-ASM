@@ -10,13 +10,13 @@ Disassemble single symbols in a binary.
 - [x] Disassemble ELF binaries. **Linux**
 - [x] Disassemble PE/COFF binaries. **Windows GNU**
 - [x] Disassemble PE/COFF + PDB binaries. **Windows MSVC**
-- [ ] Disassemble Mach binaries. **MacOS**
+- [x] Disassemble Mach binaries. **MacOS**
 
 - [x] Patch call instructions with symbol names.
 
 - [x] Use DWARF debug information to show Rust code on Linux.
 - [x] Use DWARF debug information to show Rust code on Widnows (GNU).
-- [ ] Use DWARF debug information to show Rust code on MacOS.
+- [x] Use DWARF debug information to show Rust code on MacOS.
 - [x] Use PDB debug information to show Rust code on Windows (MSVC).
 
 
