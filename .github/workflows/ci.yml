@@ -42,8 +42,8 @@ jobs:
           with:
               path: target
               key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
-        - name: Install LLVM and Clang
-          run: sudo apt install llvm-dev libclang-dev clang
+        # - name: Install LLVM and Clang
+        #   run: sudo apt install llvm-dev libclang-dev clang
         - name: Check Tools
           run: |
             rustc --version
@@ -92,8 +92,8 @@ jobs:
           with:
               path: target
               key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
-        - name: Install LLVM and Clang
-          run: brew install llvm
+        # - name: Install LLVM and Clang
+        #   run: brew install llvm
         - name: Check Tools
           run: |
             rustc --version
@@ -142,8 +142,8 @@ jobs:
           with:
               path: target
               key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
-        - name: Install LLVM and Clang
-          run: choco install llvm
+        # - name: Install LLVM and Clang
+        #   run: choco install llvm
         - name: Check Tools
           run: |
             rustc --version
