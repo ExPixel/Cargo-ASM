@@ -191,10 +191,10 @@ fn get_cargo_binary_path(cargo_args: &CargoArgs) -> anyhow::Result<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         let mut binary_name = String::from(&bin_targets[0].name);
-        binary_path.push(&binary_name);
         if !binary_name.ends_with(".exe") {
             binary_name.push_str(".exe");
         }
+        binary_path.push(&binary_name);
     }
 
     #[cfg(not(target_os = "windows"))]
