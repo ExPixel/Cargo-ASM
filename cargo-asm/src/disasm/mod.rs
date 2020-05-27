@@ -161,12 +161,34 @@ fn write_disasm_output<'a, 'i, Out: Write + WriteColor>(
         Vec::new()
     };
 
+    let mut previous_source_path: Option<PathBuf> = None;
+    let mut previous_source_line: Option<u32> = None;
+
     for (instr_idx, instr) in instrs.iter().enumerate() {
         if context.config.display_source {
             let line_mappings = &mut context.line_mappings;
             let line_cache = &mut context.line_cache;
             if let Some(line) = line_mappings
                 .get(instr.address())?
+                .filter(|(path, line)| {
+                    let ret = previous_source_path
+                        .as_ref()
+                        .map(|p| p != path)
+                        .unwrap_or(true)
+                        || previous_source_line.map(|l| l != *line).unwrap_or(true);
+
+                    if let Some(p) = previous_source_path.take() {
+                        let mut o = p.into_os_string();
+                        o.clear();
+                        o.push(path);
+                        previous_source_path = Some(PathBuf::from(o));
+                    } else {
+                        previous_source_path = Some(PathBuf::from(path));
+                    };
+                    previous_source_line = Some(*line);
+
+                    ret
+                })
                 .and_then(|(path, line)| line_cache.get_line(path, line))
             {
                 output.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_bold(true))?;
