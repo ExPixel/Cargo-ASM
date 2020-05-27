@@ -52,6 +52,8 @@ jobs:
             cargo clippy --version
         - name: Build
           run: cargo build
+        - name: Disassemble
+          run: cargo run -- disasm -S "cargo_asm::disasm::disassemble"
         - name: Clippy Lints
           run: cargo clippy --all-features -- -A warnings
         - name: Check Formatting
@@ -100,6 +102,8 @@ jobs:
             cargo clippy --version
         - name: Build
           run: cargo build
+        - name: Disassemble
+          run: cargo run -- disasm -S "cargo_asm::disasm::disassemble"
         - name: Clippy Lints
           run: cargo clippy --all-features -- -A warnings
         - name: Check Formatting
@@ -148,6 +152,8 @@ jobs:
             cargo clippy --version
         - name: Build
           run: cargo build
+        - name: Disassemble
+          run: cargo run -- disasm -S "cargo_asm::disasm::disassemble"
         - name: Clippy Lints
           run: cargo clippy --all-features -- -A warnings
         - name: Check Formatting
@@ -196,6 +202,8 @@ jobs:
     #         cargo clippy --version
     #     - name: Build
     #       run: cargo build
+    #     - name: Disassemble
+    #       run: cargo run -- disasm -S "cargo_asm::disasm::disassemble"
     #     - name: Clippy Lints
     #       run: cargo clippy --all-features -- -A warnings
     #     - name: Check Formatting
