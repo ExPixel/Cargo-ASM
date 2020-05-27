@@ -177,6 +177,11 @@ fn write_disasm_output<'a, 'i, Out: Write + WriteColor>(
                         .unwrap_or(true)
                         || previous_source_line.map(|l| l != *line).unwrap_or(true);
 
+                    // FIXME remove debug code.
+                    if ret {
+                        println!("@@ {}:{}", path.display(), line);
+                    }
+
                     if let Some(p) = previous_source_path.take() {
                         let mut o = p.into_os_string();
                         o.clear();
