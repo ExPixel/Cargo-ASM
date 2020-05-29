@@ -2,3 +2,7 @@
 members = [
     "cargo-asm"
 ]
+
+exclude = [
+    "pow"
+]

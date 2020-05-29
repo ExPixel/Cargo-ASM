@@ -52,8 +52,14 @@ jobs:
             cargo clippy --version
         - name: Build
           run: cargo build
+        - name: Build Pow
+          run: cargo build
+          working-directory: pow
         - name: Disassemble
-          run: cargo run -- disasm -S "cargo_asm::disasm::disassemble"
+          run: cargo run -- disasm "pow::pow" -S --manifest-path pow/Cargo.toml
+        - name: Tree Pow
+          run: tree
+          working-directory: pow
         - name: Clippy Lints
           run: cargo clippy --all-features -- -A warnings
         - name: Check Formatting
@@ -102,8 +108,14 @@ jobs:
             cargo clippy --version
         - name: Build
           run: cargo build
+        - name: Build Pow
+          run: cargo build
+          working-directory: pow
         - name: Disassemble
-          run: cargo run -- disasm -S "cargo_asm::disasm::disassemble"
+          run: cargo run -- disasm "pow::pow" -S --manifest-path pow/Cargo.toml
+        - name: Tree Pow
+          run: tree
+          working-directory: pow
         - name: Clippy Lints
           run: cargo clippy --all-features -- -A warnings
         - name: Check Formatting
@@ -152,8 +164,14 @@ jobs:
             cargo clippy --version
         - name: Build
           run: cargo build
+        - name: Build Pow
+          run: cargo build
+          working-directory: pow
         - name: Disassemble
-          run: cargo run -- disasm -S "cargo_asm::disasm::disassemble"
+          run: cargo run -- disasm "pow::pow" -S --manifest-path pow/Cargo.toml
+        - name: Tree Pow
+          run: tree
+          working-directory: pow
         - name: Clippy Lints
           run: cargo clippy --all-features -- -A warnings
         - name: Check Formatting
