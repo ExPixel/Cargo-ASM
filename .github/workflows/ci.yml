@@ -171,17 +171,17 @@ jobs:
         - name: Build Pow
           run: cargo build
           working-directory: pow
-        - name: Disassemble
-          run: cargo run -- disasm "pow::pow" -S --manifest-path pow/Cargo.toml
+        # - name: Disassemble
+        #   run: cargo run -- disasm "pow::pow" -S --manifest-path pow/Cargo.toml
         - name: Upload Pow
           uses: actions/upload-artifact@v1
           with:
               name: pow-windows-msvc
               path: pow
-        - name: Clippy Lints
-          run: cargo clippy --all-features -- -A warnings
-        - name: Check Formatting
-          run: cargo fmt --all -- --check
+        # - name: Clippy Lints
+        #   run: cargo clippy --all-features -- -A warnings
+        # - name: Check Formatting
+        #   run: cargo fmt --all -- --check
 
     windows-gnu-test:
         runs-on: windows-latest
@@ -229,14 +229,14 @@ jobs:
         - name: Build Pow
           run: cargo build
           working-directory: pow
-        - name: Disassemble
-          run: cargo run -- disasm "pow::pow" -S --manifest-path pow/Cargo.toml
+        # - name: Disassemble
+        #   run: cargo run -- disasm "pow::pow" -S --manifest-path pow/Cargo.toml
         - name: Upload Pow
           uses: actions/upload-artifact@v1
           with:
               name: pow-windows-gnu
               path: pow
-        - name: Clippy Lints
-          run: cargo clippy --all-features -- -A warnings
-        - name: Check Formatting
-          run: cargo fmt --all -- --check
+        # - name: Clippy Lints
+        #   run: cargo clippy --all-features -- -A warnings
+        # - name: Check Formatting
+        #   run: cargo fmt --all -- --check
