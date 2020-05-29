@@ -57,9 +57,11 @@ jobs:
           working-directory: pow
         - name: Disassemble
           run: cargo run -- disasm "pow::pow" -S --manifest-path pow/Cargo.toml
-        - name: Tree Pow
-          run: tree
-          working-directory: pow
+        - name: Upload Pow
+          uses: actions/upload-artifact@v1
+          with:
+              name: pow-linux
+              path: pow
         - name: Clippy Lints
           run: cargo clippy --all-features -- -A warnings
         - name: Check Formatting
@@ -113,9 +115,11 @@ jobs:
           working-directory: pow
         - name: Disassemble
           run: cargo run -- disasm "pow::pow" -S --manifest-path pow/Cargo.toml
-        - name: Tree Pow
-          run: tree
-          working-directory: pow
+        - name: Upload Pow
+          uses: actions/upload-artifact@v1
+          with:
+              name: pow-macos
+              path: pow
         - name: Clippy Lints
           run: cargo clippy --all-features -- -A warnings
         - name: Check Formatting
@@ -169,60 +173,70 @@ jobs:
           working-directory: pow
         - name: Disassemble
           run: cargo run -- disasm "pow::pow" -S --manifest-path pow/Cargo.toml
-        - name: Tree Pow
-          run: tree
-          working-directory: pow
+        - name: Upload Pow
+          uses: actions/upload-artifact@v1
+          with:
+              name: pow-windows-msvc
+              path: pow
         - name: Clippy Lints
           run: cargo clippy --all-features -- -A warnings
         - name: Check Formatting
           run: cargo fmt --all -- --check
 
-    # windows-gnu-test:
-    #     runs-on: windows-latest
-    #     env:
-    #         CARGO_INCREMENTAL: 0
-    #     steps:
-    #     - uses: actions/checkout@v2
-    #     - name: Checkout
-    #       shell: bash
-    #       run: |
-    #         auth_header="$(git config --local --get http.https://github.com/.extraheader)"
-    #         git submodule sync --recursive
-    #         git -c "http.extraheader=$auth_header" -c protocol.version=2 submodule update --init --force --recursive --depth=1
-    #     - uses: actions-rs/toolchain@v1
-    #       with:
-    #           toolchain: stable-x86_64-pc-windows-gnu
-    #           profile: default
-    #           override: true
-    #           components: rustfmt, clippy
-    #     - name: Cache Cargo Registry
-    #       uses: actions/cache@v1
-    #       with:
-    #           path: ~/.cargo/registry
-    #           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-    #     - name: Cache Cargo Index
-    #       uses: actions/cache@v1
-    #       with:
-    #           path: ~/.cargo/git
-    #           key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-    #     - name: Cache Cargo Target Dir
-    #       uses: actions/cache@v1
-    #       with:
-    #           path: target
-    #           key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
-    #     - name: Install LLVM and Clang
-    #       run: choco install llvm
-    #     - name: Check Tools
-    #       run: |
-    #         rustc --version
-    #         cargo --version
-    #         cargo fmt --version
-    #         cargo clippy --version
-    #     - name: Build
-    #       run: cargo build
-    #     - name: Disassemble
-    #       run: cargo run -- disasm -S "cargo_asm::disasm::disassemble"
-    #     - name: Clippy Lints
-    #       run: cargo clippy --all-features -- -A warnings
-    #     - name: Check Formatting
-    #       run: cargo fmt --all -- --check
+    windows-gnu-test:
+        runs-on: windows-latest
+        env:
+            CARGO_INCREMENTAL: 0
+        steps:
+        - uses: actions/checkout@v2
+        - name: Checkout
+          shell: bash
+          run: |
+            auth_header="$(git config --local --get http.https://github.com/.extraheader)"
+            git submodule sync --recursive
+            git -c "http.extraheader=$auth_header" -c protocol.version=2 submodule update --init --force --recursive --depth=1
+        - uses: actions-rs/toolchain@v1
+          with:
+              toolchain: stable-x86_64-pc-windows-gnu
+              profile: default
+              override: true
+              components: rustfmt, clippy
+        - name: Cache Cargo Registry
+          uses: actions/cache@v1
+          with:
+              path: ~/.cargo/registry
+              key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        - name: Cache Cargo Index
+          uses: actions/cache@v1
+          with:
+              path: ~/.cargo/git
+              key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+        - name: Cache Cargo Target Dir
+          uses: actions/cache@v1
+          with:
+              path: target
+              key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
+        # - name: Install LLVM and Clang
+        #   run: choco install llvm
+        - name: Check Tools
+          run: |
+            rustc --version
+            cargo --version
+            cargo fmt --version
+            cargo clippy --version
+        - name: Build
+          run: cargo build
+        - name: Build Pow
+          run: cargo build
+          working-directory: pow
+        - name: Disassemble
+          run: cargo run -- disasm "pow::pow" -S --manifest-path pow/Cargo.toml
+        - name: Upload Pow
+          uses: actions/upload-artifact@v1
+          with:
+              name: pow-windows-gnu
+              path: pow
+        - name: Clippy Lints
+          run: cargo clippy --all-features -- -A warnings
+        - name: Check Formatting
+          run: cargo fmt --all -- --check
