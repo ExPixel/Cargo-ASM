@@ -63,7 +63,7 @@ pub fn analyze_pe<'a>(
         .map(|pdb_str| PathBuf::from(pdb_str));
 
     // FIXME allow passing PDB file as an argument somehow which would override this:
-    let pdb_path = if Some(true) == debug_data_pdb.as_ref().map(|p| p.exists()) {
+    let pdb_path = if Some(true) == debug_data_pdb.as_ref().map(|p| p.is_file()) {
         debug_data_pdb
     } else {
         find_pdb_path(binary_path)

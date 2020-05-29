@@ -259,20 +259,33 @@ fn find_external_dwarf(binary_path: &Path) -> Option<PathBuf> {
         n
     };
     let dsym_path = directory.join(dsym_name);
-    let dwarf_path = {
+
+    let dwarf_dir = {
         let mut p = dsym_path;
         p.push("Contents");
         p.push("Resources");
         p.push("DWARF");
-        p.push(binary_path.file_name()?);
         p
     };
 
+    let dwarf_path = dwarf_dir.join(binary_path.file_name()?);
+
     if dwarf_path.is_file() {
-        Some(dwarf_path)
-    } else {
-        None
+        return Some(dwarf_path);
     }
+
+    // If we can't find the exact file name, we just use the first file that is found in the DWARF
+    // directory. I'm not sure if there are ever multiple in there :P, I do know that sometimes the
+    // file has a hash at the end.
+    for entry in std::fs::read_dir(&dwarf_dir).ok()? {
+        let entry = entry.ok()?;
+        let path = entry.path();
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+
+    return None;
 }
 
 const MACH_TYPE_FUNC: u8 = 0x24;
